@@ -3,3 +3,15 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "決定性: 辞書順の BTreeMap を使う" },
+  { path = "std::collections::HashSet", reason = "決定性: BTreeSet を使う" },
+]
+
+disallowed-methods = [
+  { path = "std::time::SystemTime::now", reason = "時刻に依存しない" },
+  { path = "std::time::Instant::now", reason = "時刻に依存しない" },
+  { path = "std::env::var", reason = "環境に依存しない" },
+  { path = "std::env::vars", reason = "環境に依存しない" },
+]
