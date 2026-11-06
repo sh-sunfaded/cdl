@@ -5,8 +5,8 @@
       "severity": "error",
       "span": {
         "file": "7/nesting-too-deep.cdl",
-        "start": 253,
-        "end": 254
+        "start": 188,
+        "end": 189
       }
     }
   ]

@@ -406,7 +406,7 @@ fn source_size_limit() {
 /// 上限ちょうどの入れ子が、oxc と変換を通ってもスタックを使い切らない（テストのスレッドは 2 MiB）。
 #[test]
 fn nesting_at_the_limit_does_not_overflow_the_stack() {
-    let n = 126;
+    let n = 62;
     let inputs = [
         format!("const a = {}x{};", "(".repeat(n), ")".repeat(n)),
         format!("const a = {}x{};", "[".repeat(n), "]".repeat(n)),
@@ -437,6 +437,35 @@ fn nesting_beyond_the_limit_is_reported() {
     for unit in ["(", "!", "[", "<A>", "`${", "a.", "x ? y : ", "(y) => "] {
         let src = file(&format!("const a = {}", unit.repeat(10_000)));
         assert!(codes(&src).contains(&Code::NestingTooDeep), "{unit}");
+    }
+}
+
+/// 既定の上限（64）ちょうどの入れ子は通り、1 つ超えると E1008 になる（SPEC 第 7 章）。
+#[test]
+fn nesting_limit_boundary_at_the_default() {
+    let limit = usize::try_from(Limits::default().max_nesting).unwrap();
+    assert_eq!(limit, 64);
+    // `const a =` の `=` も連鎖の 1 つに数えるので、括弧は上限 - 1 個まで書ける。
+    let at = limit - 1;
+    let inputs = |n: usize| {
+        [
+            format!("const a = {}x{};", "(".repeat(n), ")".repeat(n)),
+            format!("const a = {}x{};", "[".repeat(n), "]".repeat(n)),
+            format!("const a = {}x;", "!".repeat(n)),
+            format!("const a = {}x{};", "<A>".repeat(n), "</A>".repeat(n)),
+        ]
+    };
+    for src in inputs(at) {
+        assert!(
+            !codes(&file(&src)).contains(&Code::NestingTooDeep),
+            "上限ちょうどは通る: {src}"
+        );
+    }
+    for src in inputs(at + 1) {
+        assert!(
+            codes(&file(&src)).contains(&Code::NestingTooDeep),
+            "上限 + 1 は E1008: {src}"
+        );
     }
 }
 

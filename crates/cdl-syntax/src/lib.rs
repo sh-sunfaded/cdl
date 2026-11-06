@@ -25,7 +25,7 @@ impl Default for Limits {
     fn default() -> Self {
         Limits {
             max_source_bytes: 1 << 20,
-            max_nesting: 128,
+            max_nesting: 64,
         }
     }
 }
