@@ -13,9 +13,8 @@ use cdl_sema::syntax::ast::*;
 use crate::Limits;
 use crate::budget::Budget;
 use crate::num::{self, f64_to_i64, js_number_string, normalize};
-use crate::value::{
-    Element as Node, FnRepr, Function, Scope, Tree, Value, count_nodes, depth_exceeds,
-};
+use crate::value::Element as Node;
+use crate::value::{FnRepr, Function, Scope, Tree, Value, count_nodes, depth_exceeds};
 
 /// 評価の誤り。`span` が `None` なら、評価していたトップレベルの宣言の位置にする（DECISIONS D8）。
 #[derive(Clone, Debug, PartialEq)]
