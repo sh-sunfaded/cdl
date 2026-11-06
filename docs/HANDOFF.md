@@ -77,7 +77,8 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 | フィールド | 既定 | 備考 |
 | --- | --- | --- |
 | `max_source_bytes` | 1 MiB | 1 ファイル。E5001 |
-| `max_nesting` | 128 | 構文の入れ子。E1008 |
+| `max_nesting` | 64 | 構文の入れ子。E1008 |
+| `max_value_depth` | 64 | 値木の深さ。E5011 |
 | `max_steps` | 1,000,000 | Document 全体。E5002 |
 | `max_call_depth` | 64 | E5003 |
 | `max_string_bytes` | 64 KiB | E5004 |

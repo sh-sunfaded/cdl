@@ -13,7 +13,9 @@ use cdl_sema::syntax::ast::*;
 use crate::Limits;
 use crate::budget::Budget;
 use crate::num::{self, f64_to_i64, js_number_string, normalize};
-use crate::value::{Element as Node, FnRepr, Function, Scope, Value, count_nodes};
+use crate::value::{
+    Element as Node, FnRepr, Function, Scope, Tree, Value, count_nodes, depth_exceeds,
+};
 
 /// 評価の誤り。`span` が `None` なら、評価していたトップレベルの宣言の位置にする（DECISIONS D8）。
 #[derive(Clone, Debug, PartialEq)]
@@ -386,6 +388,24 @@ impl<'a> Evaluator<'a> {
             .map_err(|_| limit(Code::StepLimit, "評価ステップの上限を超えた"))
     }
 
+    /// 値木の深さが上限を超えていないか（DECISIONS D11）。
+    fn check_depth(&self, tree: Tree<'_>) -> R<()> {
+        if depth_exceeds(tree, self.limits.max_value_depth) {
+            Err(limit(
+                Code::ValueDepth,
+                format!("値木の深さが上限 {} を超えた", self.limits.max_value_depth),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// 新しく作った値の深さを検査して、そのまま返す。
+    fn bounded(&self, v: Value) -> R<Value> {
+        self.check_depth(Tree::Value(&v))?;
+        Ok(v)
+    }
+
     fn check_len(&self, n: usize) -> R<()> {
         if u64::try_from(n).unwrap_or(u64::MAX) > u64::from(self.limits.max_collection_len) {
             Err(limit(
@@ -453,7 +473,7 @@ impl<'a> Evaluator<'a> {
                     }
                     self.check_len(out.len())?;
                 }
-                Ok(Value::array(out))
+                self.bounded(Value::array(out))
             }
             ExprKind::Object(props) => {
                 let mut map = BTreeMap::new();
@@ -477,7 +497,7 @@ impl<'a> Evaluator<'a> {
                     }
                     self.check_len(map.len())?;
                 }
-                Ok(Value::Object(Arc::new(map)))
+                self.bounded(Value::Object(Arc::new(map)))
             }
             ExprKind::Unary { op, expr } => {
                 let v = self.expr(expr, scope)?;
@@ -565,7 +585,7 @@ impl<'a> Evaluator<'a> {
             ExprKind::Fragment(children) => {
                 let mut out = Vec::new();
                 self.children(children, scope, &mut out)?;
-                Ok(Value::array(out.into_iter().map(Value::Element).collect()))
+                self.bounded(Value::array(out.into_iter().map(Value::Element).collect()))
             }
         }
     }
@@ -718,7 +738,7 @@ impl<'a> Evaluator<'a> {
                     self.step()?;
                     out.push(self.call_value(&f, vec![x.clone()], span)?);
                 }
-                Ok(Value::array(out))
+                self.bounded(Value::array(out))
             }
             "filter" => {
                 let f = fn_arg(args.next())?;
@@ -873,13 +893,15 @@ impl<'a> Evaluator<'a> {
             return Ok(Arc::new(node));
         }
         self.check_unique(name, &children)?;
-        Ok(Arc::new(Node {
+        let node = Arc::new(Node {
             name: name.clone(),
             props,
             children,
             span: self.file_span(el.span),
             expanded_from: Vec::new(),
-        }))
+        });
+        self.check_depth(Tree::Element(&node))?;
+        Ok(node)
     }
 
     /// 一意な子の重複（評価後の検査。DECISIONS E2）。

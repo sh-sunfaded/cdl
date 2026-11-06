@@ -34,6 +34,8 @@ pub struct Limits {
     pub max_collection_len: u32,
     /// 評価結果の値木のノード数。
     pub max_nodes: u64,
+    /// 評価結果の値木の深さ（要素・配列・オブジェクトを 1 段と数える。DECISIONS D11）。
+    pub max_value_depth: u32,
     /// フックの呼び出し 1 回あたりの評価ステップ。
     pub max_hook_steps: u64,
 }
@@ -46,6 +48,7 @@ impl Default for Limits {
             max_string_bytes: 64 * 1024,
             max_collection_len: 65_536,
             max_nodes: 1_000_000,
+            max_value_depth: 64,
             max_hook_steps: 10_000,
         }
     }
@@ -160,6 +163,19 @@ pub fn call_hook(
         },
         _ => None,
     };
+    // ホストから渡された値も、再帰する前に深さを抑える。
+    if value::depth_exceeds(value::Tree::Value(&arg), limits.max_value_depth) {
+        let e = eval::EvalError {
+            code: Code::ValueDepth,
+            span: Some(span),
+            unit: Some(entry),
+            message: format!(
+                "フック `{hook}` の引数の深さが上限 {} を超えた",
+                limits.max_value_depth
+            ),
+        };
+        return Err(diagnostic(units, entry, e));
+    }
     if let Some(param) = &param
         && !conforms(&arg, param)
     {

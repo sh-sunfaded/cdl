@@ -14,6 +14,7 @@ use cdl_eval::sema::syntax::{self, ast::Module};
 use cdl_eval::sema::types::{Field, Ty};
 use cdl_eval::sema::{self as sema, Checked};
 use cdl_eval::{Evaluated, Limits, Value, call_hook, evaluate};
+use proptest::prelude::*;
 
 /// import のない 1 つのファイル。
 static NO_DEPS: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
@@ -130,6 +131,50 @@ fn limits_can_be_overridden() {
     assert_eq!(code(doc, &small(|l| l.max_nodes = 2)), Code::NodeLimit);
 }
 
+/// 値木の深さの上限（SPEC 第 7 章）: ちょうどなら成功、+ 1 なら E5011。
+#[test]
+fn value_depth_boundary() {
+    let with = |max: u32| Limits {
+        max_value_depth: max,
+        ..Limits::default()
+    };
+    // 配列 3 段は深さ 3。
+    let arrays = format!("const a = [[[1]]];\n{ROOT}");
+    assert!(run(&arrays, &with(3)).is_ok());
+    assert_eq!(code(&arrays, &with(2)), Code::ValueDepth);
+    // オブジェクトも 1 段と数える。
+    let objects = format!("const a = {{ x: {{ y: {{ z: 1 }} }} }};\n{ROOT}");
+    assert!(run(&objects, &with(3)).is_ok());
+    assert_eq!(code(&objects, &with(2)), Code::ValueDepth);
+    // 要素も 1 段と数える。`<Root>` だけで深さ 1、子を 1 つ置くと 2。
+    let element = "export default (<Root><Item name=\"a\" /></Root>);\n";
+    assert!(run(element, &with(2)).is_ok());
+    assert_eq!(code(element, &with(1)), Code::ValueDepth);
+    assert!(run(ROOT, &with(1)).is_ok());
+    assert_eq!(code(ROOT, &with(0)), Code::ValueDepth);
+    // map の結果も検査する。
+    let mapped = format!("const a = [1].map((x) => [[x]]);\n{ROOT}");
+    assert!(run(&mapped, &with(3)).is_ok());
+    assert_eq!(code(&mapped, &with(2)), Code::ValueDepth);
+}
+
+/// 構文の入れ子の上限を、`const` の連鎖で抜けても、既定の上限（64）で止まる。
+#[test]
+fn value_depth_default_bounds_const_chains() {
+    let chain = |n: usize| {
+        let mut body = String::from("const a0 = [1];\n");
+        for i in 1..n {
+            body.push_str(&format!("const a{i} = [a{}];\n", i - 1));
+        }
+        body.push_str(ROOT);
+        body
+    };
+    assert_eq!(Limits::default().max_value_depth, 64);
+    assert!(run(&chain(64), &Limits::default()).is_ok());
+    assert_eq!(code(&chain(65), &Limits::default()), Code::ValueDepth);
+    assert_eq!(code(&chain(5_000), &Limits::default()), Code::ValueDepth);
+}
+
 #[test]
 fn limit_errors_point_at_the_declaration() {
     let body = format!("const ok = 1;\nconst heavy = [1, 2, 3].map((x) => x + 1);\n{ROOT}");
@@ -225,6 +270,12 @@ fn hooks_are_called_with_their_own_budget() {
         call(&limits, Value::Number(1.0)).unwrap_err().code,
         Code::HookArgument
     );
+    // ホストが渡した引数の深さも、上限で抑える。
+    let mut deep = arg("deep");
+    for _ in 0..limits.max_value_depth {
+        deep = Value::object([("appId", deep)]);
+    }
+    assert_eq!(call(&limits, deep).unwrap_err().code, Code::ValueDepth);
     // 呼び出しごとの上限。ドキュメントの評価に使った分は数えない。
     limits.max_hook_steps = 2;
     assert_eq!(call(&limits, arg("big")).unwrap_err().code, Code::StepLimit);
@@ -237,4 +288,77 @@ fn evaluation_is_deterministic() {
     let a = run(body, &Limits::default()).unwrap();
     let b = run(body, &Limits::default()).unwrap();
     assert_eq!(a.document, b.document);
+}
+
+// ---- 任意の入力で完了する（SPEC 第 12 章） -----------------------------------------
+
+/// 構文解析・型検査・評価を通す。どこで誤りになってもよいが、パニックせずに戻ること。
+fn pipeline(src: &str) {
+    let Ok(module) = syntax::parse("main.cdl", src, &syntax::Limits::default()) else {
+        return;
+    };
+    let Ok(checked) = sema::check(&module, &schema()) else {
+        return;
+    };
+    let _ = evaluate(&[unit(&module, &checked)], 0, &schema(), &Limits::default());
+}
+
+/// CDL らしい断片。組み合わせて、評価の奥まで届く入力を作る。
+const TOKENS: &[&str] = &[
+    "const",
+    "function",
+    "return",
+    "export default",
+    "(",
+    ")",
+    "[",
+    "]",
+    "{",
+    "}",
+    "<Root>",
+    "</Root>",
+    "<Item name=\"a\" />",
+    "<",
+    ">",
+    "=",
+    "=>",
+    ":",
+    ";",
+    ",",
+    ".map(",
+    "...",
+    "?",
+    "+",
+    "/",
+    "x",
+    "f",
+    "1",
+    "0",
+    "\"s\"",
+    "`${",
+    "}`",
+    "px(1)",
+    "ms(1)",
+    "color(\"#fff\")",
+    "\n",
+];
+
+proptest! {
+    // 回数は環境変数 PROPTEST_CASES で変える（既定 256）。
+    #[test]
+    fn arbitrary_strings_complete_without_panic(src in any::<String>()) {
+        pipeline(&src);
+    }
+
+    #[test]
+    fn arbitrary_strings_after_a_valid_header_complete(body in any::<String>()) {
+        pipeline(&format!("{HEAD}{body}"));
+    }
+
+    #[test]
+    fn token_soup_completes_without_panic(
+        tokens in proptest::collection::vec(proptest::sample::select(TOKENS), 0..200)
+    ) {
+        pipeline(&format!("{HEAD}{}", tokens.join(" ")));
+    }
 }

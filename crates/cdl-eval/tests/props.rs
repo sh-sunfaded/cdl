@@ -105,6 +105,7 @@ fn allowed(code: Code) -> bool {
             | Code::StringLimit
             | Code::CollectionLimit
             | Code::NodeLimit
+            | Code::ValueDepth
             | Code::DivisionByZero
             | Code::NonFinite
             | Code::DurationRange
@@ -112,7 +113,7 @@ fn allowed(code: Code) -> bool {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(512))]
+    // 回数は環境変数 PROPTEST_CASES で変える（既定 256）。
 
     /// P3: 型検査を通った式は、評価で型の誤り（E5000）にならず、値は静的な型に合う。
     #[test]

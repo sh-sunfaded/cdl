@@ -163,6 +163,46 @@ pub fn conforms(v: &Value, ty: &Ty) -> bool {
     }
 }
 
+/// 深さを測る対象。
+#[derive(Clone, Copy)]
+pub(crate) enum Tree<'a> {
+    Value(&'a Value),
+    Element(&'a Element),
+}
+
+/// 値木の深さが `limit` を超えるか（DECISIONS D11）。要素・配列・オブジェクトを 1 段と数え、葉は数えない。
+/// 深い木でもスタックを使い切らないよう、明示のスタックで数える。超えた時点で打ち切る。
+pub(crate) fn depth_exceeds(root: Tree<'_>, limit: u32) -> bool {
+    let mut stack: Vec<(Tree<'_>, u32)> = vec![(root, 0)];
+    while let Some((tree, above)) = stack.pop() {
+        let level = above.saturating_add(1);
+        match tree {
+            Tree::Value(Value::Array(xs)) => {
+                if level > limit {
+                    return true;
+                }
+                stack.extend(xs.iter().map(|x| (Tree::Value(x), level)));
+            }
+            Tree::Value(Value::Object(m)) => {
+                if level > limit {
+                    return true;
+                }
+                stack.extend(m.values().map(|x| (Tree::Value(x), level)));
+            }
+            Tree::Value(Value::Element(e)) => stack.push((Tree::Element(e), above)),
+            Tree::Value(_) => {}
+            Tree::Element(e) => {
+                if level > limit {
+                    return true;
+                }
+                stack.extend(e.props.values().map(|x| (Tree::Value(x), level)));
+                stack.extend(e.children.iter().map(|c| (Tree::Element(c), level)));
+            }
+        }
+    }
+    false
+}
+
 /// 値木のノード数（要素・配列・オブジェクト・葉のすべて。DECISIONS D4）。
 pub(crate) fn count_nodes(e: &Element, limit: u64) -> u64 {
     // 深い木でもスタックを使い切らないよう、明示のスタックで数える。

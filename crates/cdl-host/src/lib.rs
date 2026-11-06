@@ -57,6 +57,8 @@ pub struct Limits {
     pub max_collection_len: u32,
     /// 評価結果の値木のノード数。
     pub max_nodes: u64,
+    /// 評価結果の値木の深さ（要素・配列・オブジェクトを 1 段と数える）。
+    pub max_value_depth: u32,
     /// フックの呼び出し 1 回あたりの評価ステップ。
     pub max_hook_steps: u64,
 }
@@ -73,6 +75,7 @@ impl Default for Limits {
             max_string_bytes: eval.max_string_bytes,
             max_collection_len: eval.max_collection_len,
             max_nodes: eval.max_nodes,
+            max_value_depth: eval.max_value_depth,
             max_hook_steps: eval.max_hook_steps,
         }
     }
@@ -93,6 +96,7 @@ impl Limits {
             max_string_bytes: self.max_string_bytes,
             max_collection_len: self.max_collection_len,
             max_nodes: self.max_nodes,
+            max_value_depth: self.max_value_depth,
             max_hook_steps: self.max_hook_steps,
         }
     }
