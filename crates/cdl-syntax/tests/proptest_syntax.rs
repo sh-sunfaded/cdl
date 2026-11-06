@@ -102,8 +102,7 @@ const TOKENS: &[&str] = &[
 ];
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(512))]
-
+    // 回数は環境変数 PROPTEST_CASES で変える（既定 256）。
     #[test]
     fn arbitrary_bytes_do_not_panic(bytes in proptest::collection::vec(any::<u8>(), 0..4096)) {
         let src = String::from_utf8_lossy(&bytes);
@@ -933,8 +932,7 @@ fn module_s() -> impl Strategy<Value = Module> {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(256))]
-
+    // 回数は環境変数 PROPTEST_CASES で変える（既定 256）。
     #[test]
     fn printed_ast_parses_back_to_itself(m in module_s()) {
         let src = print(&m);

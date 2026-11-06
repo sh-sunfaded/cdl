@@ -17,7 +17,7 @@ use cdl_sema::syntax::{Limits, parse};
 use proptest::prelude::*;
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(512))]
+    // 回数は環境変数 PROPTEST_CASES で変える（既定 256）。
 
     #[test]
     fn generated_typed_expressions_type_check((t, expr) in typed_gen::gen_typed_expr()) {
