@@ -71,6 +71,8 @@ pub(crate) struct Evaluator<'a> {
     limits: Limits,
     budget: Budget,
     depth: u32,
+    /// 評価の再帰の深さ（`expr` と `element` の入れ子）。
+    nest: u32,
 }
 
 impl<'a> UnitState<'a> {
@@ -244,12 +246,14 @@ impl<'a> Evaluator<'a> {
             limits,
             budget: Budget::new(steps),
             depth: 0,
+            nest: 0,
         }
     }
 
     pub(crate) fn reset_budget(&mut self, steps: u64) {
         self.budget = Budget::new(steps);
         self.depth = 0;
+        self.nest = 0;
     }
 
     // ---- トップレベル --------------------------------------------------------
@@ -443,7 +447,27 @@ impl<'a> Evaluator<'a> {
 
     // ---- 式 ------------------------------------------------------------------
 
+    /// 評価の再帰の深さを数える（呼び出しの深さと構文の入れ子の積が、スタックを使い切らないようにする。
+    /// DECISIONS D15）。
+    fn enter(&mut self) -> R<()> {
+        self.nest = self.nest.saturating_add(1);
+        if self.nest > self.limits.max_eval_depth {
+            return Err(limit(
+                Code::EvalDepth,
+                format!("評価の再帰が上限 {} を超えた", self.limits.max_eval_depth),
+            ));
+        }
+        Ok(())
+    }
+
     fn expr(&mut self, e: &'a Expr, scope: &Arc<Scope>) -> R<Value> {
+        self.enter()?;
+        let r = self.expr_inner(e, scope);
+        self.nest = self.nest.saturating_sub(1);
+        r
+    }
+
+    fn expr_inner(&mut self, e: &'a Expr, scope: &Arc<Scope>) -> R<Value> {
         self.step()?;
         let span = e.span;
         match &e.kind {
@@ -882,6 +906,13 @@ impl<'a> Evaluator<'a> {
     }
 
     fn element(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<Arc<Node>> {
+        self.enter()?;
+        let r = self.element_inner(el, scope);
+        self.nest = self.nest.saturating_sub(1);
+        r
+    }
+
+    fn element_inner(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<Arc<Node>> {
         let mut props = self.props(el, scope)?;
         let mut children = Vec::new();
         self.children(&el.children, scope, &mut children)?;

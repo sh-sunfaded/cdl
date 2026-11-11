@@ -104,6 +104,7 @@ codes! {
     DurationRange => "E5009", "整数ミリ秒にならない、または範囲外の Duration";
     InvalidColor => "E5010", "`color()` の書式の誤り";
     ValueDepth => "E5011", "値木の深さの上限超過";
+    EvalDepth => "E5012", "評価の再帰の深さの上限超過";
 }
 
 impl Serialize for Code {

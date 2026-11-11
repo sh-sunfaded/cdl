@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E5012",
+      "severity": "error",
+      "span": {
+        "file": "7/eval-depth.cdl",
+        "start": 1218,
+        "end": 1219
+      }
+    }
+  ]
+}

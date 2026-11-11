@@ -51,6 +51,8 @@ pub struct Limits {
     pub max_steps: u64,
     /// 関数・コンポーネント・コールバックの呼び出しの深さ。
     pub max_call_depth: u32,
+    /// 評価の再帰（式と要素の入れ子。呼び出しをまたいで数える）の深さ。
+    pub max_eval_depth: u32,
     /// 1 つの文字列の長さ（UTF-8 のバイト数）。
     pub max_string_bytes: u32,
     /// 1 つの配列・マップの要素数。
@@ -72,6 +74,7 @@ impl Default for Limits {
             max_nesting: syntax.max_nesting,
             max_steps: eval.max_steps,
             max_call_depth: eval.max_call_depth,
+            max_eval_depth: eval.max_eval_depth,
             max_string_bytes: eval.max_string_bytes,
             max_collection_len: eval.max_collection_len,
             max_nodes: eval.max_nodes,
@@ -93,6 +96,7 @@ impl Limits {
         cdl_eval::Limits {
             max_steps: self.max_steps,
             max_call_depth: self.max_call_depth,
+            max_eval_depth: self.max_eval_depth,
             max_string_bytes: self.max_string_bytes,
             max_collection_len: self.max_collection_len,
             max_nodes: self.max_nodes,

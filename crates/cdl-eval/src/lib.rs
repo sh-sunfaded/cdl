@@ -28,6 +28,8 @@ pub struct Limits {
     pub max_steps: u64,
     /// 関数・コンポーネント・コールバックの呼び出しの深さ。
     pub max_call_depth: u32,
+    /// 評価の再帰（式と要素の入れ子。呼び出しをまたいで数える）の深さ。
+    pub max_eval_depth: u32,
     /// 1 つの文字列の長さ（UTF-8 のバイト数）。
     pub max_string_bytes: u32,
     /// 1 つの配列・マップの要素数。
@@ -45,6 +47,7 @@ impl Default for Limits {
         Limits {
             max_steps: 1_000_000,
             max_call_depth: 64,
+            max_eval_depth: 128,
             max_string_bytes: 64 * 1024,
             max_collection_len: 65_536,
             max_nodes: 1_000_000,
