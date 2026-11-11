@@ -352,7 +352,7 @@ crates/
   cdl-host/    組み込み API（Engine / ModuleResolver / Limits / Schema）
   cdl-cli/     check / eval
 conformance/   .cdl と期待結果（値木 or 診断の JSON）。実装非依存
-docs/          SPEC.md, DECISIONS.md, DIAGNOSTICS.md, PROTOTYPE-REPORT.md
+docs/          SPEC.md, DECISIONS.md, DIAGNOSTICS.md, PROTOTYPE-REPORT.md, AUDIT.md, HANDOFF.md
 examples/      Contrast 向けの設定例とホスト組み込みの例
 scripts/       check-all.sh ほか
 ```
@@ -374,19 +374,23 @@ scripts/       check-all.sh ほか
 
 | 主張 | 検証手段 |
 | --- | --- |
-| 字句解析・パースは任意入力でパニックしない | Kani（自前の字句検査）+ proptest |
-| 評価は必ず停止する | Kani（ステップ予算の単調減少）+ 上限超過テスト + 参照グラフの DAG・再帰型の禁止 |
-| 整数演算にラップ・未定義動作がない | Kani（checked 演算） |
+| 字句解析・パースは任意入力でパニックしない | clippy の deny（unwrap・添字・算術など）+ 構文ネスト深さの上限 + proptest。Kani と cargo-fuzz は使わない（SPEC 第 12 章） |
+| 評価は必ず停止する | 参照グラフの DAG・再帰型の禁止 + ステップ上限 + 上限超過テスト（証明ではない。最終精査 `docs/AUDIT.md` に、上限をすり抜ける入力が記録されている） |
+| 整数演算にラップ・未定義動作がない | `unsafe_code = "forbid"` + clippy の `arithmetic_side_effects` deny（checked 演算） |
 | 型検査を通った式は評価で型エラーにならない | proptest（型付き式ジェネレータ） |
 | 診断のコード・位置が回帰しない | ゴールデンテスト（`conformance/`） |
 | 同じ入力は常に同じ出力 | 同じ入力を 2 回評価する差分テスト |
 
 ```sh
-bash scripts/check-all.sh              # rules / fmt / clippy / test / conformance / spec-examples
-WITH_KANI=1 bash scripts/check-all.sh  # Kani も含める（時間がかかる）
+bash scripts/check-all.sh   # rules / fmt / clippy / test / conformance / spec-examples をまとめて実行し、OK / NG / 未実行 の表を出す
+bash scripts/verify.sh      # 手動確認用: test / fmt / clippy（メモリ上限つき）と、目視用の grep
 ```
 
-結果は OK / NG / 未実行 の 3 種類で、入っていないツールは「未実行」であり成功ではありません。
+- `scripts/check-all.sh` は kani の行を「未実行」として表に出します（`WITH_KANI=1` で `cargo kani` を呼ぶ口は残っていますが、この開発環境では使わない方針で、実行していません）。そのため、終了コードは通常 2（NG なし・未実行あり）です。
+- 個別のスクリプト: `check-rules.sh`（unsafe・unwrap・`as`・oxc の漏れ・依存の向き・fs/env/time・HashMap の静的検査。最初の `#[cfg(test)]` 以降は走査しない）、`check-conformance.sh`（期待結果の有無・2 回評価の一致・禁止構文・診断コードの各帯）、`check-spec-examples.sh`（SPEC の例が通ること）。
+- 結果は OK / NG / 未実行 の 3 種類で、入っていないツールは「未実行」であり成功ではありません。
+
+実行していないこと: Kani（`#[cfg(kani)]` のハーネスはあるが、一度も実行しておらず、コンパイルできるかも未確認）、cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`（問題が見つかっている）。
 
 ### 適合テスト（`conformance/`）
 
@@ -406,8 +410,9 @@ WITH_KANI=1 bash scripts/check-all.sh  # Kani も含める（時間がかかる�
 - 実装済み: パース（`oxc_parser` 経由）、名前解決、型検査、スキーマ適合、評価、ポリシーのフック、複数ファイルの import、CLI の `check` / `eval`。
 - 対象外: `fmt`、`migrate`、LSP、パッケージ管理、ホストが公開する定数（DECISIONS X1）、edition の範囲の問い合わせ API（X2）。
 - 構文の誤りからの回復は未対応（`oxc_parser` は最初の構文エラーで止まる）。
-- Kani のハーネスは `#[cfg(kani)]` の中に置いてあります。実行結果は [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) の 5 章を参照してください。
-- 仕様に反映していない決定が残っています（同 6 章）。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) にまとまっています。
+- Kani のハーネスは `#[cfg(kani)]` の中にありますが、**実行していません**（証明できた主張はありません）。fuzz も未実施です。
+- 最終精査（[`docs/AUDIT.md`](docs/AUDIT.md)）で、**入力 1 つでプロセスが abort する・資源を使い切る問題が見つかっており、未修正**です。このため「必ず停止する」「パニックも abort もしない」は、現状の実装では成り立っていません。
+- DECISIONS の決定は SPEC に反映済みです（構文エラーからの回復の未実装など、実装が仕様に届いていない点は SPEC の該当箇所に注記）。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) にまとまっています。
 
 ## ライセンス
 

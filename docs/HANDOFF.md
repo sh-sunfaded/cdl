@@ -1,6 +1,6 @@
 # CDL 引き継ぎ書（Contrast への組み込みを担当する人へ）
 
-2026-11-05 時点。確認したことだけを書く。推測は「推測」、確認できなかったことは「未確認」と書く。
+2026-11-11 時点。確認したことだけを書く。推測は「推測」、確認できなかったことは「未確認」と書く。
 細部は `docs/SPEC.md`（言語仕様）・`docs/DECISIONS.md`（実装の決定 83 項目）・`docs/DIAGNOSTICS.md`（診断コード表）・rustdoc を参照する。
 
 ## 1. 要約
@@ -109,7 +109,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 - 全クレートが `version = "0.0.0"`、`publish = false`。git のタグは**ない**（`git tag` が空）。
 - パス依存: `cdl-host = { path = "../cdl/crates/cdl-host" }`。
-- git 依存を使うなら、タグがないので `rev = "<コミットハッシュ>"` で固定する。**作業ツリーに未コミットの変更が多数ある**（`conformance/` の再配置など、`git status` で 89 ファイル）ので、固定する前にコミットする必要がある。
+- git 依存を使うなら、タグがないので `rev = "<コミットハッシュ>"` で固定する。作業ツリーの状態は、この文書を書く前に未コミットの docs の変更（SPEC・README・AUDIT・本書）がある。固定するコミットは、それらをコミットしたあとにする。
 - `rust-toolchain.toml` あり（rustc 1.99.1 で確認）。edition 2024。`oxc_*` は `=0.157.0` に固定されている。`Cargo.lock` はある。
 
 ## 3. 言語の要点（間違えやすい点）
@@ -148,18 +148,18 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 1. SPEC §10 は「パーサは同期点で回復し複数の誤りを報告」とするが、実装は最初の構文エラーで止まる（DECISIONS C11・C16。名前解決以降は複数報告する）。
 2. SPEC §12 は構文解析の非パニックに cargo-fuzz を挙げるが、実装は proptest で代替（F4）。
 3. SPEC §9・§13 の「ホストの定数」と「edition 範囲の問い合わせ API」は未実装（X1・X2）。
-4. DECISIONS で「仕様: 修正／追記」とした項目の一部は SPEC.md に未反映（PROTOTYPE-REPORT §6 の記述。個別には未確認。SPEC §7 の表は C10 改訂を反映済みであることは確認した）。CLAUDE.md の規則では、これらは SPEC か DECISIONS のどちらを直すか提案して承認を得る必要がある。
+4. DECISIONS の決定は 2026-11-11 に SPEC.md へ反映した（H1・H3・S5・E4007/E4008・X1・X2・構文エラーの回復の現状・付録 B の扱い）。PROTOTYPE-REPORT §6 の「未反映」の記述は古い。
 5. 参照ホストの定義が 2 か所で食い違う: `conformance/HOST.md` と `cdl-cli` の `contrast_schema()` は一意子が `Appearance` だけ。`examples/contrast.rs` の `schema()` は `Appearance` と `Animation`。
 6. SPEC §11 の依存図に対し、実装は「どのクレートも `cdl-diag` に直接依存してよい」（DECISIONS H1。`architecture.rs` で検査）。
 7. 上記以外は、確認した限りなし。ただし SPEC 全文と実装の突き合わせはしていない（**未確認**）。
 
 ## 5. 検証の状況
 
-### 5.1 実行して確認した（2026-11-05、このセッションで実行）
+### 5.1 実行して確認した（`cargo test` は 2026-11-11、ほかは 2026-11-05）
 
 | 検査 | 結果 |
 | --- | --- |
-| `cargo test --workspace` | OK。111 テスト、失敗 0（件数は各バイナリの `test result` の合計） |
+| `cargo test --workspace` | OK（2026-11-11）。125 テスト、失敗 0（各バイナリの `test result` の合計） |
 | `cargo fmt --check` | OK |
 | `cargo clippy --workspace --all-targets -- -D warnings` | OK |
 | `scripts/check-rules.sh` | すべて OK |
@@ -187,7 +187,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 ### 5.4 最終精査
 
-`docs/AUDIT.md` は**存在しない**。最終精査は**未実施**。
+`docs/AUDIT.md`（2026-11-11）。**重大な問題が 5 件、未修正**: (P1) `keyof`/`readonly`/`unique` の連鎖で構文解析が abort、(P2) 型エイリアスの倍々展開でメモリ枯渇・エイリアスの長い連鎖で abort、(P3) 呼び出しの深さ × 入れ子で評価器が abort（20 KB の入力）、(P4) 共有された値の深さ検査が指数時間（62 行の入力）、(P5) メモリの総量とテンプレートの途中のバッファに上限がない。詳細・再現入力は AUDIT.md。**Contrast に組み込む前に、少なくとも P1〜P4 の対処を決める**。ホストができる軽減策は、評価を十分なスタックの別スレッドで走らせること（P1・P3 の閾値が上がるだけで、解決ではない。推測）と、`Limits::max_source_bytes` を下げること。
 
 ## 6. 既知の制限とはまりやすい点
 
@@ -230,5 +230,5 @@ scripts/       check-all.sh, check-rules.sh, check-conformance.sh, check-spec-ex
 3. **変換層**: いまは `Node::prop` で手書きに読む（E7 を E8 で改訂）。型付きの変換（`derive` など）は未実装。スキーマと変換コードの食い違いは E4008 になる（実行時）。スキーマから変換を作るかを決める。
 4. **リロード**: `Program` は不変・`Send + Sync`。差し替え（世代番号・失敗時に旧設定を残す）は Contrast 側（E5）。`load` が失敗したときの診断の通知先（ログか画面か）を決める。ファイル監視と、import 先の変更検知は `Program::files()` が使えるが、監視の実装自体は**未確認**（CDL 側にはない）。
 5. **フックの追加**: Contrast の `Policy` 型（`windowOpen` 以外）と、フックごとの `max_hook_steps` の妥当性。現状は全フック共通の 1 値。
-6. **Kani の実行と、その結果の PROTOTYPE-REPORT §5 への反映**、および最終精査（`docs/AUDIT.md`）。
-7. 未コミットの変更（`conformance/` の再配置など）のコミットと、固定するコミットの決定（2.7）。
+6. **AUDIT.md の問題の修正**（P1 の前走査の数え漏れ、P2 の型の大きさ・深さの上限、P3 の評価器の再帰、P4 の深さ検査の共有対応、P5 の総量の上限）。修正は SPEC 第 7 章の表に上限を足す変更になるものがあるので、先に `conformance/` のテストを足す。Kani は使わない方針（SPEC 第 12 章）。
+7. docs の変更のコミットと、固定するコミットの決定（2.7）。
