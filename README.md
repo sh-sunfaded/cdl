@@ -374,7 +374,7 @@ scripts/       check-all.sh ほか
 
 | 主張 | 検証手段 |
 | --- | --- |
-| 字句解析・パースは任意入力でパニックしない | clippy の deny（unwrap・添字・算術など）+ 構文ネスト深さの上限 + proptest。Kani と cargo-fuzz は使わない（SPEC 第 12 章） |
+| 字句解析・パースは任意入力でパニックしない | clippy の deny（unwrap・添字・算術など）+ 構文ネスト深さの上限 + proptest。Kani（自前の字句検査の一部。9/10 個成功）。cargo-fuzz は使わない（SPEC 第 12 章） |
 | 評価は必ず停止する | 参照グラフの DAG・再帰型の禁止 + ステップ上限 + 上限超過テスト（証明ではない。最終精査 `docs/AUDIT.md` で見つかった、上限をすり抜ける入力は修正済み） |
 | 整数演算にラップ・未定義動作がない | `unsafe_code = "forbid"` + clippy の `arithmetic_side_effects` deny（checked 演算） |
 | 型検査を通った式は評価で型エラーにならない | proptest（型付き式ジェネレータ） |
@@ -390,7 +390,7 @@ bash scripts/verify.sh      # 手動確認用: test / fmt / clippy（メモリ�
 - 個別のスクリプト: `check-rules.sh`（unsafe・unwrap・`as`・oxc の漏れ・依存の向き・fs/env/time・HashMap の静的検査。最初の `#[cfg(test)]` 以降は走査しない）、`check-conformance.sh`（期待結果の有無・2 回評価の一致・禁止構文・診断コードの各帯）、`check-spec-examples.sh`（SPEC の例が通ること）。
 - 結果は OK / NG / 未実行 の 3 種類で、入っていないツールは「未実行」であり成功ではありません。
 
-Kani の実行結果: 8 個成功・2 個は時間切れ（`WITH_KANI=1` の `scripts/check-all.sh` 全体は未実行。個別に `cargo kani` を実行した）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`（見つかった問題は修正済み。精読していない範囲が残る）。
+Kani の実行結果: 9 個成功・1 個（`lexer_never_panics`）は時間切れ（`WITH_KANI=1` の `scripts/check-all.sh` 全体は未実行。個別に `cargo kani` を実行した）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`（見つかった問題は修正済み。精読していない範囲が残る）。
 
 ### 適合テスト（`conformance/`）
 

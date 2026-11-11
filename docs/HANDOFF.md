@@ -171,7 +171,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 ### 5.2 未実行
 
-- **Kani（2026-11-11 に `cargo kani` を直接実行）**: 10 個のハーネスのうち 8 個が成功。`lexer_never_panics`・`nesting_reports_overflow`（`cdl-syntax/src/lex.rs`）は約 10 分で結論が出ず、未了。詳細は PROTOTYPE-REPORT §5。`WITH_KANI=1 scripts/check-all.sh` 経由では未実行。
+- **Kani（2026-11-11 に `cargo kani` を直接実行）**: 10 個のハーネスのうち 9 個が成功。`lexer_never_panics`（`cdl-syntax/src/lex.rs`）だけが、入力を 2 バイトに下げても時間切れで未了。`nesting_reports_overflow` はハーネスの誤りを直して成功。詳細は PROTOTYPE-REPORT §5。`WITH_KANI=1 scripts/check-all.sh` 経由では未実行。
 - **fuzz: 未実行**（使わない決定。F4）。
 - `WITH_KANI=1 scripts/check-all.sh`: 未実行。`scripts/check-all.sh` は kani の行だけが「未実行」で、終了コードは 2。
 - パフォーマンス（ベンチ）: 未実施。`benches/` はない。
