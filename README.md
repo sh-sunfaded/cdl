@@ -4,8 +4,8 @@ CDL は、Wayland コンポジタ Contrast の設定とポリシーを宣言す�
 
 このリポジトリは Contrast から独立していて、Contrast には外部ライブラリ（`cdl-host`）として組み込まれます。ホストを限定しないので、Contrast 以外にも埋め込めます。
 
-> **状態: プロトタイプ（edition 1 は不安定で、互換性の約束はまだない）。**
-> 目的は、仕様の主張（決定性・停止性・型安全）が実装で成り立つかを確かめること。
+> **状態: プロトタイプとして完成（2026-11-11。edition 1 は不安定で、互換性の約束はまだない）。**
+> 目的は、仕様の主張（決定性・停止性・型安全）が実装で成り立つかを確かめること。最終精査の結果と、確かめていないことは [`docs/AUDIT.md`](docs/AUDIT.md)、Contrast への組み込みを担当する人への引き継ぎは [`docs/HANDOFF.md`](docs/HANDOFF.md) にあります。
 > この README は仕様の要約です。**正典は [`docs/SPEC.md`](docs/SPEC.md)** で、仕様が沈黙している点の決定は [`docs/DECISIONS.md`](docs/DECISIONS.md) にあります。食い違いがあれば、そちらに従ってください。
 
 ## 目次
@@ -225,8 +225,9 @@ export default (
 
 | 項目 | 既定値 |
 | --- | --- |
-| 評価ステップ | 1,000,000（Document 全体） |
+| 評価ステップ | 1,000,000（Document 全体。値の深さの検査と、256 バイトごとの文字列生成も数える） |
 | 呼び出し深さ | 64 |
+| 評価の再帰の深さ | 128（式と要素の入れ子。呼び出しをまたいで数える） |
 | 文字列長 | 64 KiB（1 値あたり） |
 | 配列・マップ要素数 | 65,536（1 値あたり） |
 | 値木ノード数 | 1,000,000 |
@@ -234,6 +235,7 @@ export default (
 | ファイル数 | 256（エントリを含む） |
 | 構文の入れ子の深さ | 64 |
 | 値木の深さ | 64 |
+| 型の大きさ | 深さ 128・ノード数 4,096（固定。超過は E3013） |
 | フック 1 回のステップ | 10,000（別枠） |
 
 ### 決定性
@@ -391,7 +393,7 @@ bash scripts/verify.sh      # 手動確認用: test / fmt / clippy（メモリ�
 - 個別のスクリプト: `check-rules.sh`（unsafe・unwrap・`as`・oxc の漏れ・依存の向き・fs/env/time・HashMap の静的検査。最初の `#[cfg(test)]` 以降は走査しない）、`check-conformance.sh`（期待結果の有無・2 回評価の一致・禁止構文・診断コードの各帯）、`check-spec-examples.sh`（SPEC の例が通ること）。
 - 結果は OK / NG / 未実行 の 3 種類で、入っていないツールは「未実行」であり成功ではありません。
 
-Kani の実行結果: 9 個成功。`lexer_never_panics` は時間切れで実行対象から外した（`WITH_KANI=1 bash scripts/check-all.sh` はすべて OK）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`（見つかった問題は修正済み。精読していない範囲が残る）。
+Kani の実行結果: 9 個成功。`lexer_never_panics` は時間切れで実行対象から外した（`WITH_KANI=1 bash scripts/check-all.sh` はすべて OK）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`。
 
 ### 適合テスト（`conformance/`）
 
@@ -408,12 +410,25 @@ Kani の実行結果: 9 個成功。`lexer_never_panics` は時間切れで実�
 
 ## プロトタイプの現状
 
-- 実装済み: パース（`oxc_parser` 経由）、名前解決、型検査、スキーマ適合、評価、ポリシーのフック、複数ファイルの import、CLI の `check` / `eval`。
-- 対象外: `fmt`、`migrate`、LSP、パッケージ管理、ホストが公開する定数（DECISIONS X1）、edition の範囲の問い合わせ API（X2）。
-- 構文の誤りからの回復は未対応（`oxc_parser` は最初の構文エラーで止まる）。
-- Kani: 9 個のハーネスが成功（`WITH_KANI=1 bash scripts/check-all.sh` もすべて OK）。`lexer_never_panics` は入力を 2 バイトまで下げても時間切れで、実行対象から外しました（証明できていません。proptest とファジングで代替）（[`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) の 5 章）。cargo-fuzz は未実施です。
-- 最終精査（[`docs/AUDIT.md`](docs/AUDIT.md)）で見つかった abort・資源枯渇・実用上の非停止（P1〜P5）は修正済みで、適合テストを足しました（型の大きさの上限 E3013、評価の再帰の深さ E5012 など）。P6・P7 も対処済みです（ファイル数の上限 E5013 など）。`check.rs`・`convert.rs` は全行精読の代わりに、再帰の深さの確認と極端な上限値のテストで確かめました。上限の既定値は暫定です。
-- DECISIONS の決定は SPEC に反映済みです（構文エラーからの回復の未実装など、実装が仕様に届いていない点は SPEC の該当箇所に注記）。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) にまとまっています。
+完成の条件は、`WITH_KANI=1 bash scripts/check-all.sh` がすべて OK（rules・fmt・clippy・test 125 件・conformance・spec-examples・kani）で、最終精査で見つかった重大な問題が 0 件であること。2026-11-11 時点で満たしています。
+
+**できること**
+- パース（`oxc_parser` 経由）、名前解決、型検査、スキーマ適合、評価、ポリシーのフック、複数ファイルの import、CLI の `check` / `eval`、Rust のスキーマ・ビルダーと値木の読み出し（`cdl-host`）。
+
+**対象外・未対応**
+- `fmt`、`migrate`、LSP、パッケージ管理。ホストが公開する定数（DECISIONS X1）、edition の範囲の問い合わせ API（X2）。
+- 構文の誤りからの回復（`oxc_parser` は最初の構文エラーで止まる。SPEC 第 10 章に注記）。`oxc_parser` はプロトタイプ限りで、本実装では自前パーサに置き換える。
+
+**検証したこと**
+- 最終精査（[`docs/AUDIT.md`](docs/AUDIT.md)）で、abort・資源枯渇・実用上の非停止を 5 件（P1〜P5）見つけて修正し、軽微な 2 件（P6・P7）も対処しました。各々に適合テストを足しています（型の大きさ E3013、評価の再帰 E5012、ファイル数 E5013 など）。
+- Kani は 10 個のハーネスのうち 9 個が成功です。`lexer_never_panics` は入力を 2 バイトまで下げても時間切れで、実行対象から外しました（証明できていません。proptest と突然変異ファジングで代替）。
+
+**確かめていないこと**
+- `check.rs`・`convert.rs` の全行精読（再帰の深さの確認と極端な上限値のテストで代えました）。入れ子の前走査が数えない構文が、ほかにもあるかもしれません。
+- cargo-fuzz、ベンチ、実際の設定ファイルの規模での性能と上限の既定値の妥当性（既定値は暫定）。oxc 自体のソースの精査。
+- Kani と proptest は、仕様の主張を証明するものではありません（SPEC 第 12 章）。
+
+DECISIONS の決定は SPEC に反映済みです。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) にあります。
 
 ## ライセンス
 
