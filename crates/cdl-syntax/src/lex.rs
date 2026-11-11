@@ -1005,26 +1005,22 @@ mod verification {
 
     /// K4: 入れ子の帳簿は上限を超えたら必ず `TooDeep` を返し、数はあふれない。
     #[kani::proof]
-    #[kani::unwind(8)]
+    #[kani::unwind(6)]
     fn nesting_reports_overflow() {
         let max: u32 = kani::any();
         kani::assume(max < 4);
         let mut n = Nesting::new(max);
-        for _ in 0..6 {
+        for _ in 0..4 {
             let op: u8 = kani::any();
-            let r = match op % 4 {
-                0 => n.push(FrameKind::Paren, 0),
-                1 => n.inc(),
+            // `pop` と `reset` は検査を返さない。`push` と `inc` だけが、上限を超えたら必ず `Err` を返す。
+            match op % 4 {
+                0 => assert_eq!(n.push(FrameKind::Paren, 0).is_err(), n.depth > max),
+                1 => assert_eq!(n.inc().is_err(), n.depth > max),
                 2 => {
                     n.pop(FrameKind::Paren);
-                    Ok(())
                 }
-                _ => {
-                    n.reset();
-                    Ok(())
-                }
-            };
-            assert_eq!(r.is_err(), n.depth > max);
+                _ => n.reset(),
+            }
         }
     }
 }

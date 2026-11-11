@@ -79,7 +79,7 @@ DECISIONS の項目の多くが、仕様の沈黙を埋めたもの。実装の�
 
 ## 5. Kani で証明できた主張と、できなかった主張
 
-2026-11-11 に `cargo kani`（Kani 0.68.0・CBMC 6.11.0。メモリ上限 6 GiB）を実行した。10 個のうち **8 個が成功**、**2 個は 9〜10 分（timeout 540〜570 秒）で結論が出なかった**（失敗ではない）。
+2026-11-11 に `cargo kani`（Kani 0.68.0・CBMC 6.11.0。メモリ上限 6 GiB）を実行した。10 個のうち **9 個が成功**、**1 個（`lexer_never_panics`）は結論が出なかった**（失敗ではない）。
 
 | ハーネス | 結果 |
 | --- | --- |
@@ -87,7 +87,8 @@ DECISIONS の項目の多くが、仕様の沈黙を埋めたもの。実装の�
 | `duration_add_sub_are_checked`・`f64_to_i64_is_exact`・`i64_to_f64_never_panics`（K6） | 成功 |
 | `parse_color_never_panics`（K7） | 成功（ログに `unreachable code` の記述があるが、検証は SUCCESSFUL） |
 | `number_scan_is_bounded`（K3）・`escape_scan_is_bounded`（K2） | 成功 |
-| `lexer_never_panics`（K1）・`nesting_reports_overflow`（K4） | **未了**（時間切れ。`unwind` と入力長を下げれば終わる可能性があるが、試していない） |
+| `nesting_reports_overflow`（K4） | 成功（再実行。操作列を 6 回から 4 回、`unwind` を 8 から 6 に下げた。最初の実行は時間切れ。下げた版の初回は FAILURE だったが、`pop`・`reset` の操作にも「戻り値が `Err` かどうか = 深さが上限超過か」を要求していたハーネスの誤りで、実装の誤りではない。`push`・`inc` だけに要求する形に直して成功） |
+| `lexer_never_panics`（K1） | **未了**（8 バイト・`unwind(10)` は 9 分で時間切れ。入力を 4 バイト、2 バイトに下げても 6〜9 分以内に終わらなかった。入力長ではなく、`check` の初期化・文字走査の展開が重いと見られる（推測）。ハーネスは元の 8 バイトに戻した） |
 
 証明できたのは、ハーネスの範囲（有界な入力）での性質だけで、AUDIT で見つかった問題（再帰によるスタック溢れ・資源枯渇）は、Kani のハーネスの対象外だった。
 

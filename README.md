@@ -410,7 +410,7 @@ Kani の実行結果: 8 個成功・2 個は時間切れ（`WITH_KANI=1` の `sc
 - 実装済み: パース（`oxc_parser` 経由）、名前解決、型検査、スキーマ適合、評価、ポリシーのフック、複数ファイルの import、CLI の `check` / `eval`。
 - 対象外: `fmt`、`migrate`、LSP、パッケージ管理、ホストが公開する定数（DECISIONS X1）、edition の範囲の問い合わせ API（X2）。
 - 構文の誤りからの回復は未対応（`oxc_parser` は最初の構文エラーで止まる）。
-- Kani: 10 個のハーネスのうち 8 個が成功、2 個（`lexer_never_panics`・`nesting_reports_overflow`）は約 10 分で結論が出ませんでした（[`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) の 5 章）。cargo-fuzz は未実施です。
+- Kani: 10 個のハーネスのうち 9 個が成功、`lexer_never_panics` だけは結論が出ませんでした（入力を 2 バイトまで下げても時間切れ）（[`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) の 5 章）。cargo-fuzz は未実施です。
 - 最終精査（[`docs/AUDIT.md`](docs/AUDIT.md)）で見つかった abort・資源枯渇・実用上の非停止（P1〜P5）は修正済みで、適合テストを足しました（型の大きさの上限 E3013、評価の再帰の深さ E5012 など）。未対処: P6・P7（推測の低い問題）と、精読できなかった範囲。上限の既定値は暫定です。
 - DECISIONS の決定は SPEC に反映済みです（構文エラーからの回復の未実装など、実装が仕様に届いていない点は SPEC の該当箇所に注記）。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) にまとまっています。
 
