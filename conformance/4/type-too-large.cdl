@@ -1,0 +1,25 @@
+// §4/§7 型の大きさ: 倍々に展開される型別名は、ノード数の上限（4096）を超えたところで E3013（AUDIT P2）。
+"use cdl 1";
+import { Contrast } from "host:contrast";
+type T0 = { a: number; b: number };
+type T1 = { a: T0; b: T0 };
+type T2 = { a: T1; b: T1 };
+type T3 = { a: T2; b: T2 };
+type T4 = { a: T3; b: T3 };
+type T5 = { a: T4; b: T4 };
+type T6 = { a: T5; b: T5 };
+type T7 = { a: T6; b: T6 };
+type T8 = { a: T7; b: T7 };
+type T9 = { a: T8; b: T8 };
+type T10 = { a: T9; b: T9 };
+type T11 = { a: T10; b: T10 };
+type T12 = { a: T11; b: T11 };
+type T13 = { a: T12; b: T12 };
+type T14 = { a: T13; b: T13 };
+type T15 = { a: T14; b: T14 };
+type T16 = { a: T15; b: T15 };
+type T17 = { a: T16; b: T16 };
+type T18 = { a: T17; b: T17 };
+type T19 = { a: T18; b: T18 };
+type T20 = { a: T19; b: T19 };
+export default (<Contrast />);

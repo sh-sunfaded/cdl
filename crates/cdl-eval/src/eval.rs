@@ -387,20 +387,20 @@ impl<'a> Evaluator<'a> {
             .map_err(|_| limit(Code::StepLimit, "評価ステップの上限を超えた"))
     }
 
-    /// 値木の深さが上限を超えていないか（DECISIONS D11）。
-    fn check_depth(&self, tree: Tree<'_>) -> R<()> {
-        if depth_exceeds(tree, self.limits.max_value_depth) {
-            Err(limit(
+    /// 値木の深さが上限を超えていないか（DECISIONS D11）。たどった値ごとにステップを使う（D13）。
+    fn check_depth(&mut self, tree: Tree<'_>) -> R<()> {
+        match depth_exceeds(tree, self.limits.max_value_depth, Some(&mut self.budget)) {
+            Ok(false) => Ok(()),
+            Ok(true) => Err(limit(
                 Code::ValueDepth,
                 format!("値木の深さが上限 {} を超えた", self.limits.max_value_depth),
-            ))
-        } else {
-            Ok(())
+            )),
+            Err(_) => Err(limit(Code::StepLimit, "評価ステップの上限を超えた")),
         }
     }
 
     /// 新しく作った値の深さを検査して、そのまま返す。
-    fn bounded(&self, v: Value) -> R<Value> {
+    fn bounded(&mut self, v: Value) -> R<Value> {
         self.check_depth(Tree::Value(&v))?;
         Ok(v)
     }

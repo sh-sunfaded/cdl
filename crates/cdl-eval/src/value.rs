@@ -7,6 +7,8 @@ use std::fmt;
 use std::sync::Arc;
 
 use cdl_diag::Span;
+
+use crate::budget::{Budget, Exhausted};
 use cdl_sema::types::{Literal, Ty};
 
 /// 評価の値。`Object` はオブジェクトと `Record` の両方を表す。
@@ -172,20 +174,29 @@ pub(crate) enum Tree<'a> {
 
 /// 値木の深さが `limit` を超えるか（DECISIONS D11）。要素・配列・オブジェクトを 1 段と数え、葉は数えない。
 /// 深い木でもスタックを使い切らないよう、明示のスタックで数える。超えた時点で打ち切る。
-pub(crate) fn depth_exceeds(root: Tree<'_>, limit: u32) -> bool {
+/// `budget` があれば、たどった値 1 つにつき 1 ステップを使う（共有された値を木として何度もたどる
+/// 作業が、ステップ上限をすり抜けないようにする。DECISIONS D13）。使い切ったら `Err`。
+pub(crate) fn depth_exceeds(
+    root: Tree<'_>,
+    limit: u32,
+    mut budget: Option<&mut Budget>,
+) -> Result<bool, Exhausted> {
     let mut stack: Vec<(Tree<'_>, u32)> = vec![(root, 0)];
     while let Some((tree, above)) = stack.pop() {
+        if let Some(b) = budget.as_deref_mut() {
+            b.charge(1)?;
+        }
         let level = above.saturating_add(1);
         match tree {
             Tree::Value(Value::Array(xs)) => {
                 if level > limit {
-                    return true;
+                    return Ok(true);
                 }
                 stack.extend(xs.iter().map(|x| (Tree::Value(x), level)));
             }
             Tree::Value(Value::Object(m)) => {
                 if level > limit {
-                    return true;
+                    return Ok(true);
                 }
                 stack.extend(m.values().map(|x| (Tree::Value(x), level)));
             }
@@ -193,14 +204,14 @@ pub(crate) fn depth_exceeds(root: Tree<'_>, limit: u32) -> bool {
             Tree::Value(_) => {}
             Tree::Element(e) => {
                 if level > limit {
-                    return true;
+                    return Ok(true);
                 }
                 stack.extend(e.props.values().map(|x| (Tree::Value(x), level)));
                 stack.extend(e.children.iter().map(|c| (Tree::Element(c), level)));
             }
         }
     }
-    false
+    Ok(false)
 }
 
 /// 値木のノード数（要素・配列・オブジェクト・葉のすべて。DECISIONS D4）。
@@ -220,6 +231,9 @@ pub(crate) fn count_nodes(e: &Element, limit: u64) -> u64 {
                 Value::Object(m) => values.extend(m.values()),
                 Value::Element(el) => stack.push(el),
                 _ => {}
+            }
+            if n > limit {
+                return n;
             }
         }
         if n > limit {

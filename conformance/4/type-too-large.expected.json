@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3013",
+      "severity": "error",
+      "span": {
+        "file": "4/type-too-large.cdl",
+        "start": 523,
+        "end": 526
+      }
+    }
+  ]
+}

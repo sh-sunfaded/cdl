@@ -18,6 +18,10 @@ use crate::{ExportedValue, Interface as ModuleInterface};
 const PRELUDE_VALUES: &[&str] = &["px", "ms", "sec", "color"];
 const PRELUDE_TYPES: &[&str] = &["Length", "Duration", "Color", "Element", "Array", "Record"];
 /// 配列の組み込みメソッド（DECISIONS B15）。
+/// 型の深さ・参照の深さ・ノード数の上限（DECISIONS D12。AUDIT P2）。
+const MAX_TYPE_DEPTH: u32 = 128;
+const MAX_TYPE_NODES: u32 = 4096;
+
 const METHODS: &[&str] = &["map", "filter", "reduce", "includes", "concat"];
 
 fn is_component_name(name: &str) -> bool {
@@ -879,6 +883,7 @@ impl<'a> Checker<'a> {
             }) = self.values.get(&name).copied()
             {
                 let ty = self.top_const(c);
+                let ty = self.bounded_type(&c.name, ty);
                 self.const_types.insert(name, ty);
             }
         }
@@ -894,11 +899,39 @@ impl<'a> Checker<'a> {
 
     // ---- 型注釈 -------------------------------------------------------------
 
+    /// `const` の型が大きすぎれば E3013 にして `Ty::Error` にする（共有された値の型は、木として展開されるため。AUDIT P2）。
+    fn bounded_type(&mut self, name: &Ident, ty: Ty) -> Ty {
+        if ty.exceeds(MAX_TYPE_DEPTH, MAX_TYPE_NODES) {
+            self.err(
+                Code::TypeTooLarge,
+                name.span,
+                format!(
+                    "`{}` の型が大きすぎる（深さ {MAX_TYPE_DEPTH}・ノード数 {MAX_TYPE_NODES} まで）",
+                    name.name
+                ),
+            );
+            Ty::Error
+        } else {
+            ty
+        }
+    }
+
     fn named_type(&mut self, name: &str) -> Ty {
         if let Some(t) = self.resolved_types.get(name) {
             return t.clone();
         }
         if !self.resolving.insert(name.to_owned()) {
+            return Ty::Error;
+        }
+        if u32::try_from(self.resolving.len()).unwrap_or(u32::MAX) > MAX_TYPE_DEPTH {
+            self.resolving.remove(name);
+            if let Some(span) = self.types.get(name).map(|e| e.span) {
+                self.err(
+                    Code::TypeTooLarge,
+                    span,
+                    format!("型 `{name}` の参照が深すぎる（上限 {MAX_TYPE_DEPTH}）"),
+                );
+            }
             return Ty::Error;
         }
         let ty = match self.types.get(name).map(|e| e.decl.clone()) {
@@ -908,6 +941,20 @@ impl<'a> Checker<'a> {
             None => Ty::Error,
         };
         self.resolving.remove(name);
+        let ty = if ty.exceeds(MAX_TYPE_DEPTH, MAX_TYPE_NODES) {
+            if let Some(span) = self.types.get(name).map(|e| e.span) {
+                self.err(
+                    Code::TypeTooLarge,
+                    span,
+                    format!(
+                        "型 `{name}` が大きすぎる（深さ {MAX_TYPE_DEPTH}・ノード数 {MAX_TYPE_NODES} まで）"
+                    ),
+                );
+            }
+            Ty::Error
+        } else {
+            ty
+        };
         self.resolved_types.insert(name.to_owned(), ty.clone());
         ty
     }
@@ -1284,6 +1331,7 @@ impl<'a> Checker<'a> {
                 }
                 None => self.expr(&c.init, None),
             };
+            let ty = self.bounded_type(&c.name, ty);
             if let Some(scope) = self.scopes.last_mut() {
                 scope.insert(c.name.name.clone(), ty);
             }

@@ -172,7 +172,12 @@ fn value_depth_default_bounds_const_chains() {
     assert_eq!(Limits::default().max_value_depth, 64);
     assert!(run(&chain(64), &Limits::default()).is_ok());
     assert_eq!(code(&chain(65), &Limits::default()), Code::ValueDepth);
-    assert_eq!(code(&chain(5_000), &Limits::default()), Code::ValueDepth);
+    assert_eq!(code(&chain(100), &Limits::default()), Code::ValueDepth);
+    // 型の深さの上限（128）を超える連鎖は、評価の前に意味解析が E3013 で止める（AUDIT P2）。
+    let src = format!("{HEAD}{}", chain(5_000));
+    let module = syntax::parse("main.cdl", &src, &syntax::Limits::default()).unwrap();
+    let diags = sema::check(&module, &schema()).unwrap_err();
+    assert!(diags.iter().all(|d| d.code == Code::TypeTooLarge));
 }
 
 #[test]

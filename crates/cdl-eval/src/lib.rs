@@ -164,7 +164,7 @@ pub fn call_hook(
         _ => None,
     };
     // ホストから渡された値も、再帰する前に深さを抑える。
-    if value::depth_exceeds(value::Tree::Value(&arg), limits.max_value_depth) {
+    if value::depth_exceeds(value::Tree::Value(&arg), limits.max_value_depth, None) == Ok(true) {
         let e = eval::EvalError {
             code: Code::ValueDepth,
             span: Some(span),

@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E5002",
+      "severity": "error",
+      "span": {
+        "file": "7/shared-value-steps.cdl",
+        "start": 616,
+        "end": 619
+      }
+    }
+  ]
+}

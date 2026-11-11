@@ -81,6 +81,7 @@ codes! {
     DuplicateKey => "E3010", "キー・属性・`case` の重複";
     NotAComponent => "E3011", "コンポーネントでない名前の JSX タグ";
     ChildrenTwice => "E3012", "`children` 属性と子の併記";
+    TypeTooLarge => "E3013", "型が大きすぎる（深さ・ノード数・参照の深さの上限）";
     RootElement => "E4001", "ルート要素がない・複数ある・種類が違う";
     MissingHostProp => "E4002", "組み込みコンポーネントの必須の props がない";
     UnknownHostProp => "E4003", "組み込みコンポーネントの未知の props";

@@ -44,6 +44,33 @@ pub struct Field {
     pub optional: bool,
 }
 
+impl Ty {
+    /// 型の木の深さが `max_depth` を超えるか、ノード数が `max_nodes` を超えるか（AUDIT P2）。
+    /// 深い木でもスタックを使い切らないよう、明示のスタックで数え、超えた時点で打ち切る。
+    pub fn exceeds(&self, max_depth: u32, max_nodes: u32) -> bool {
+        let mut stack: Vec<(&Ty, u32)> = vec![(self, 1)];
+        let mut nodes: u32 = 0;
+        while let Some((t, depth)) = stack.pop() {
+            nodes = nodes.saturating_add(1);
+            if depth > max_depth || nodes > max_nodes {
+                return true;
+            }
+            let next = depth.saturating_add(1);
+            match t {
+                Ty::Array(x) | Ty::Record(x) => stack.push((x, next)),
+                Ty::Tuple(xs) | Ty::Union(xs) => stack.extend(xs.iter().map(|x| (x, next))),
+                Ty::Object(fields) => stack.extend(fields.values().map(|f| (&f.ty, next))),
+                Ty::Function(params, ret) => {
+                    stack.extend(params.iter().map(|x| (x, next)));
+                    stack.push((ret, next));
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+}
+
 impl Field {
     pub fn required(ty: Ty) -> Self {
         Field {
