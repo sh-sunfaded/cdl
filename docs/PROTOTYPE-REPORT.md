@@ -79,7 +79,17 @@ DECISIONS の項目の多くが、仕様の沈黙を埋めたもの。実装の�
 
 ## 5. Kani で証明できた主張と、できなかった主張
 
-**この環境には Kani（0.68.0）が入ったが、`cargo kani` を一度も実行していない。** したがって、証明できた主張はまだない。ハーネスは `#[cfg(kani)]` の中にあるので、通常のビルドではコンパイルもされない。ハーネスがコンパイルできるかどうかも未確認。
+2026-11-11 に `cargo kani`（Kani 0.68.0・CBMC 6.11.0。メモリ上限 6 GiB）を実行した。10 個のうち **8 個が成功**、**2 個は 9〜10 分（timeout 540〜570 秒）で結論が出なかった**（失敗ではない）。
+
+| ハーネス | 結果 |
+| --- | --- |
+| `charge_is_monotone`・`charging_always_stops`（K5） | 成功 |
+| `duration_add_sub_are_checked`・`f64_to_i64_is_exact`・`i64_to_f64_never_panics`（K6） | 成功 |
+| `parse_color_never_panics`（K7） | 成功（ログに `unreachable code` の記述があるが、検証は SUCCESSFUL） |
+| `number_scan_is_bounded`（K3）・`escape_scan_is_bounded`（K2） | 成功 |
+| `lexer_never_panics`（K1）・`nesting_reports_overflow`（K4） | **未了**（時間切れ。`unwind` と入力長を下げれば終わる可能性があるが、試していない） |
+
+証明できたのは、ハーネスの範囲（有界な入力）での性質だけで、AUDIT で見つかった問題（再帰によるスタック溢れ・資源枯渇）は、Kani のハーネスの対象外だった。
 
 ### ハーネスを置いた主張（実行すれば証明できる見込みのもの、10 個）
 
