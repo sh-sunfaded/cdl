@@ -512,7 +512,7 @@ export default (
 - [x] `number` を binary64 のみにするか → binary64 のみ（G2）
 - [x] edition 宣言を `"use cdl 1";` にするか → 現案（C8）
 - [x] 診断コード表の持ち方 → `docs/DIAGNOSTICS.md`（F1）
-- [x] 検証手段: lint・設計の制約・proptest・境界テストで守る。Kani と cargo-fuzz は採用しない
+- [x] 検証手段: lint・設計の制約・proptest・境界テストで守り、Kani は有界な入力の一部に使う。cargo-fuzz は採用しない
 - [x] ネスト深さの上限: 構文 64（E1008）・値木 64（暫定、ホストが上書き可）
 - [ ] `fmt` の規約、LSP の範囲と時期（プロトタイプの対象外。実装はなく、未決のまま）
 
