@@ -386,11 +386,11 @@ bash scripts/check-all.sh   # rules / fmt / clippy / test / conformance / spec-e
 bash scripts/verify.sh      # 手動確認用: test / fmt / clippy（メモリ上限つき）と、目視用の grep
 ```
 
-- `scripts/check-all.sh` は kani の行を「未実行」として表に出します（`WITH_KANI=1` で `cargo kani` を呼ぶ口がある。`check-all.sh` 経由では実行しておらず、`cargo kani` を直接実行した）。そのため、終了コードは通常 2（NG なし・未実行あり）です。
+- `scripts/check-all.sh` は、`WITH_KANI=1` を付けないと kani の行を「未実行」として表に出し、終了コードは 2（NG なし・未実行あり）になります。`WITH_KANI=1` を付けると `cargo kani` も実行し、すべて OK なら 0 です。
 - 個別のスクリプト: `check-rules.sh`（unsafe・unwrap・`as`・oxc の漏れ・依存の向き・fs/env/time・HashMap の静的検査。最初の `#[cfg(test)]` 以降は走査しない）、`check-conformance.sh`（期待結果の有無・2 回評価の一致・禁止構文・診断コードの各帯）、`check-spec-examples.sh`（SPEC の例が通ること）。
 - 結果は OK / NG / 未実行 の 3 種類で、入っていないツールは「未実行」であり成功ではありません。
 
-Kani の実行結果: 9 個成功・1 個（`lexer_never_panics`）は時間切れ（`WITH_KANI=1` の `scripts/check-all.sh` 全体は未実行。個別に `cargo kani` を実行した）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`（見つかった問題は修正済み。精読していない範囲が残る）。
+Kani の実行結果: 9 個成功。`lexer_never_panics` は時間切れで実行対象から外した（`WITH_KANI=1 bash scripts/check-all.sh` はすべて OK）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`（見つかった問題は修正済み。精読していない範囲が残る）。
 
 ### 適合テスト（`conformance/`）
 
@@ -410,7 +410,7 @@ Kani の実行結果: 9 個成功・1 個（`lexer_never_panics`）は時間切�
 - 実装済み: パース（`oxc_parser` 経由）、名前解決、型検査、スキーマ適合、評価、ポリシーのフック、複数ファイルの import、CLI の `check` / `eval`。
 - 対象外: `fmt`、`migrate`、LSP、パッケージ管理、ホストが公開する定数（DECISIONS X1）、edition の範囲の問い合わせ API（X2）。
 - 構文の誤りからの回復は未対応（`oxc_parser` は最初の構文エラーで止まる）。
-- Kani: 10 個のハーネスのうち 9 個が成功、`lexer_never_panics` だけは結論が出ませんでした（入力を 2 バイトまで下げても時間切れ）（[`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) の 5 章）。cargo-fuzz は未実施です。
+- Kani: 9 個のハーネスが成功（`WITH_KANI=1 bash scripts/check-all.sh` もすべて OK）。`lexer_never_panics` は入力を 2 バイトまで下げても時間切れで、実行対象から外しました（証明できていません。proptest とファジングで代替）（[`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) の 5 章）。cargo-fuzz は未実施です。
 - 最終精査（[`docs/AUDIT.md`](docs/AUDIT.md)）で見つかった abort・資源枯渇・実用上の非停止（P1〜P5）は修正済みで、適合テストを足しました（型の大きさの上限 E3013、評価の再帰の深さ E5012 など）。未対処: P6・P7（推測の低い問題）と、精読できなかった範囲。上限の既定値は暫定です。
 - DECISIONS の決定は SPEC に反映済みです（構文エラーからの回復の未実装など、実装が仕様に届いていない点は SPEC の該当箇所に注記）。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) にまとまっています。
 

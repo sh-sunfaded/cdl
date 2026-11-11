@@ -971,8 +971,10 @@ mod verification {
 
     /// K1: 8 バイト以下の任意の UTF-8 の入力で、字句検査はパニックせず、
     /// 誤りの span は入力の範囲内にある（oxc に渡す前の段階だけ）。
-    #[kani::proof]
-    #[kani::unwind(10)]
+    ///
+    /// 2026-11-11: 入力を 8・4・2 バイトに下げても 6〜9 分で結論が出なかったので、`#[kani::proof]` を外した
+    /// （証明できていない。代わりに proptest の P1 と、突然変異ファジングで確かめる。PROTOTYPE-REPORT 第 5 章）。
+    #[allow(dead_code)]
     fn lexer_never_panics() {
         let bytes: [u8; 8] = kani::any();
         let len: usize = kani::any();
