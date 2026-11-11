@@ -141,7 +141,18 @@ const EXPR_KEYWORDS: &[&[u8]] = &[
 
 /// oxc が前置の構文として再帰で読むキーワード。連鎖として数える。
 const NESTING_KEYWORDS: &[&[u8]] = &[
-    b"if", b"typeof", b"void", b"delete", b"await", b"new", b"yield",
+    b"if",
+    b"typeof",
+    b"void",
+    b"delete",
+    b"await",
+    b"new",
+    b"yield",
+    b"keyof",
+    b"readonly",
+    b"unique",
+    b"infer",
+    b"asserts",
 ];
 
 fn is_ident_start(b: u8) -> bool {

@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E1008",
+      "severity": "error",
+      "span": {
+        "file": "7/nesting-keyof-chain.cdl",
+        "start": 559,
+        "end": 560
+      }
+    }
+  ]
+}
