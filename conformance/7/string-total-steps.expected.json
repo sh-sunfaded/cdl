@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E5002",
+      "severity": "error",
+      "span": {
+        "file": "7/string-total-steps.cdl",
+        "start": 1039,
+        "end": 1042
+      }
+    }
+  ]
+}

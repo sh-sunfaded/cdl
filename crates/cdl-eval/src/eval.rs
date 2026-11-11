@@ -419,8 +419,9 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn string(&self, s: String) -> R<Value> {
-        if u64::try_from(s.len()).unwrap_or(u64::MAX) > u64::from(self.limits.max_string_bytes) {
+    /// 文字列の長さを検査する。
+    fn check_string_len(&self, len: usize) -> R<()> {
+        if u64::try_from(len).unwrap_or(u64::MAX) > u64::from(self.limits.max_string_bytes) {
             return Err(limit(
                 Code::StringLimit,
                 format!(
@@ -429,6 +430,14 @@ impl<'a> Evaluator<'a> {
                 ),
             ));
         }
+        Ok(())
+    }
+
+    /// 文字列の値を作る。長さを検査し、256 バイトごとに 1 ステップを使う
+    /// （異なる大きな文字列を大量に作って、メモリを使い切れないようにする。DECISIONS D14）。
+    fn string(&mut self, s: String) -> R<Value> {
+        self.check_string_len(s.len())?;
+        self.charge(u64::try_from(s.len() / 256).unwrap_or(u64::MAX))?;
         Ok(Value::String(Arc::from(s)))
     }
 
@@ -453,6 +462,8 @@ impl<'a> Evaluator<'a> {
                             _ => return Err(internal(x.span, "補間できない値")),
                         }
                     }
+                    // 組み立ての途中でも長さを見る（完成を待つと、上限を超えて確保してしまう）。
+                    self.check_string_len(out.len())?;
                 }
                 self.string(out)
             }
