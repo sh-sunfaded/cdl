@@ -78,6 +78,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 | --- | --- | --- |
 | `max_source_bytes` | 1 MiB | 1 ファイル。E5001 |
 | `max_nesting` | 64 | 構文の入れ子。E1008 |
+| `max_modules` | 256 | 開くファイルの数（エントリを含む）。E5013 |
 | `max_value_depth` | 64 | 値木の深さ。E5011 |
 | `max_steps` | 1,000,000 | Document 全体。E5002 |
 | `max_call_depth` | 64 | E5003 |
@@ -188,7 +189,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 ### 5.4 最終精査
 
-`docs/AUDIT.md`（2026-11-11）。精査で見つかった重大な問題 5 件（P1〜P5: 構文の前置キーワードの連鎖・型の大きさ・評価の再帰・共有値の深さ検査・メモリの総量）は、同日修正し、各々に適合テストを足した（対処状況の表）。未対処: P6・P7（推測の低い問題）と、精読していない範囲（`check.rs`・`convert.rs` の全行、`Limits` の極端な値）。新しい上限: 型の深さ 128・ノード数 4,096（固定。E3013）、評価の再帰 128（`Limits::max_eval_depth`。E5012）。既定値は暫定。
+`docs/AUDIT.md`（2026-11-11）。精査で見つかった重大な問題 5 件（P1〜P5: 構文の前置キーワードの連鎖・型の大きさ・評価の再帰・共有値の深さ検査・メモリの総量）は、同日修正し、各々に適合テストを足した（対処状況の表）。P6・P7 も対処済み（`Limits::max_modules`＝既定 256・E5013、E4008 のメッセージ）。`check.rs`・`convert.rs` の全行精読はしておらず、再帰の深さの確認（22 種類の構文を入れ子の上限ぎりぎりで実行）と、極端な `Limits` のテストで代えた（フックの `max_hook_steps` を 0 にした呼び出しは未確認）。新しい上限: 型の深さ 128・ノード数 4,096（固定。E3013）、評価の再帰 128（`Limits::max_eval_depth`。E5012）。既定値は暫定。
 
 ## 6. 既知の制限とはまりやすい点
 
@@ -231,5 +232,5 @@ scripts/       check-all.sh, check-rules.sh, check-conformance.sh, check-spec-ex
 3. **変換層**: いまは `Node::prop` で手書きに読む（E7 を E8 で改訂）。型付きの変換（`derive` など）は未実装。スキーマと変換コードの食い違いは E4008 になる（実行時）。スキーマから変換を作るかを決める。
 4. **リロード**: `Program` は不変・`Send + Sync`。差し替え（世代番号・失敗時に旧設定を残す）は Contrast 側（E5）。`load` が失敗したときの診断の通知先（ログか画面か）を決める。ファイル監視と、import 先の変更検知は `Program::files()` が使えるが、監視の実装自体は**未確認**（CDL 側にはない）。
 5. **フックの追加**: Contrast の `Policy` 型（`windowOpen` 以外）と、フックごとの `max_hook_steps` の妥当性。現状は全フック共通の 1 値。
-6. **AUDIT.md の残り**（P6・P7、精読していない範囲）と、新しい上限の既定値の妥当性の確認。Kani は使わない方針（SPEC 第 12 章）。
+6. **AUDIT.md の残り**（前走査が数えない構文がほかにないか、実際の設定ファイルの規模での既定値の確認）。Kani は使わない方針（SPEC 第 12 章）。
 7. docs の変更のコミットと、固定するコミットの決定（2.7）。

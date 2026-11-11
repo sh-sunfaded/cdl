@@ -92,6 +92,23 @@ impl FromValue for Rgba {
     }
 }
 
+/// 値の種類。メッセージに値そのものを入れない（大きな値や共有された値で、メッセージが巨大になるため）。
+fn kind(v: &Value) -> &'static str {
+    match v {
+        Value::Undefined => "undefined",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Length(_) => "Length",
+        Value::Duration(_) => "Duration",
+        Value::Color(_) => "Color",
+        Value::Array(_) => "配列",
+        Value::Object(_) => "オブジェクト",
+        Value::Element(_) => "要素",
+        Value::Function(_) => "関数",
+    }
+}
+
 /// 値木の要素を読むための参照。
 #[derive(Clone, Copy, Debug)]
 pub struct Node<'a> {
@@ -135,9 +152,10 @@ impl<'a> Node<'a> {
             None | Some(Value::Undefined) => Ok(None),
             Some(v) => T::from_value(v).map(Some).ok_or_else(|| {
                 self.error(format!(
-                    "`<{}>` の `{key}` は `{}` が要る（{v:?}）",
+                    "`<{}>` の `{key}` は `{}` が要る（{}）",
                     self.name(),
-                    T::EXPECTED
+                    T::EXPECTED,
+                    kind(v)
                 ))
             }),
         }

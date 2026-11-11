@@ -47,6 +47,8 @@ pub struct Limits {
     pub max_source_bytes: u32,
     /// 構文の入れ子の深さ。
     pub max_nesting: u32,
+    /// 1 回の読み込みで開くファイルの数（エントリを含む。E5013）。
+    pub max_modules: u32,
     /// Document 全体の評価ステップ。
     pub max_steps: u64,
     /// 関数・コンポーネント・コールバックの呼び出しの深さ。
@@ -72,6 +74,7 @@ impl Default for Limits {
         Limits {
             max_source_bytes: syntax.max_source_bytes,
             max_nesting: syntax.max_nesting,
+            max_modules: 256,
             max_steps: eval.max_steps,
             max_call_depth: eval.max_call_depth,
             max_eval_depth: eval.max_eval_depth,

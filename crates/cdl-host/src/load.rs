@@ -98,6 +98,21 @@ fn collect(
                     Ok(source) => {
                         let target = match index.get(&source.id) {
                             Some(&t) => t,
+                            None if u32::try_from(ids.len()).unwrap_or(u32::MAX)
+                                >= engine.limits.max_modules =>
+                            {
+                                diags.push(error(
+                                    &id,
+                                    span.start,
+                                    span.end,
+                                    Code::ModuleLimit,
+                                    format!(
+                                        "読み込むファイルが上限 {} を超えた",
+                                        engine.limits.max_modules
+                                    ),
+                                ));
+                                continue;
+                            }
                             None => {
                                 let t = ids.len();
                                 index.insert(source.id.clone(), t);

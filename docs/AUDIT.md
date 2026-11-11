@@ -30,7 +30,13 @@ P1〜P5 は、同日、先に `conformance/` のテストを足して修正し�
 
 - 修正後の `scripts/check-all.sh`: rules・fmt・clippy・test・conformance・spec-examples が OK、kani は未実行（使わない方針）。`cargo test --workspace` は 125 件で失敗 0。突然変異ファジング 3,000 件を追加で実行し、異常は 0 件。
 - 副作用: 型の深さ・ノード数の上限は `Limits` に出さない固定値。E5002 が、共有された値を大量にたどる入力でも出るようになった（`dag20` のように 2^20 回たどる入力は、既定の 100 万ステップでは通らない）。`cdl-eval/tests/eval.rs` の `value_depth_default_bounds_const_chains` は、5,000 個の連鎖が型検査の E3013 で止まる形に直した。
-- 残り: P6・P7（推測の低い問題）は未対処。「確かめられなかった」に挙げた範囲（`check.rs` と `convert.rs` の全行精読、`Limits` の極端な値、oxc が内部で再帰する、数えていない構文）も未確認のまま。上限の既定値（128・4,096・256 バイト）は暫定で、実際の設定ファイルでの妥当性は未検証。
+- 残りの対処（同日、2 回目）:
+  - P6: `Limits::max_modules`（既定 256。E5013。DECISIONS D16）。境界テスト `module_count_limit`（cdl-host/tests/limits.rs）。
+  - P7: E4008 のメッセージに値の `Debug` を入れず、種類だけにした。
+  - `Limits` の極端な値: 全項目を 0 にした場合、最大にした場合、1 項目ずつ 0 にした場合で、パニックしないことを `extreme_limits_never_panic` で確かめた。フック呼び出し（`max_hook_steps` を 0 にして `call_hook`）は、このテストの対象外（未確認）。
+  - `check.rs`・`convert.rs` の全行精読は**していない**。代わりに、再帰する関数を列挙し（check.rs: `resolve_expr` `resolve_stmt` `resolve_children` `resolve_type_names` `ty` `stmt` `expr` `element` `children` `facts`、types.rs: `assignable` `widen` `union` `fmt` と派生の `Clone`/`Drop`、convert.rs の `expr` `ty` `stmt` `children`）、再帰の深さが構文の入れ子（上限 64）と型の深さ（上限 128）で抑えられることを確かめた。確かめ方: 22 種類の構文（括弧・単項・配列・オブジェクト・テンプレート・三項・アロー・二項・`satisfies`・メンバー・呼び出し・JSX・各種の型・`if` の連鎖）を、入れ子の上限ぎりぎりまで深くした入力を、debug ビルド・スタック 2 MiB で走らせ、abort が 0 件。ただし、前走査（`lex.rs`）が数えない構文が、ほかにあるかもしれない点は残る（P1 のような漏れの可能性。推測）。
+  - 既定値の妥当性: `examples/contrast/` の設定は、ステップ 140、評価の再帰 10、ノード 22 で通る（既定は 100 万・128・100 万）。回帰を `cdl-cli/tests/headroom.rs` が守る。実際の設定ファイルの規模での実測は、していない（例が小さい）。
+  - oxc が内部で再帰する点: 前走査が数える構文については、1 MiB 以下の入力で abort しない（上の実験）。oxc 自体のソースは精査していない。
 
 ## 問題の一覧（重大度の高い順）
 

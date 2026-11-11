@@ -188,3 +188,130 @@ fn evaluation_steps() {
     assert!(check(&src, with(least + 1)).is_ok());
     assert_eq!(Limits::default().max_steps, 1_000_000);
 }
+
+/// 連鎖して import するメモリ上のファイル群（`f0.cdl` が `f1.cdl` を import し…、最後は何も import しない）。
+struct Chain(usize);
+
+impl ModuleResolver for Chain {
+    fn resolve(&self, _importer: Option<&str>, specifier: &str) -> Result<Source, String> {
+        let name = specifier.trim_start_matches("./");
+        let n: usize = name
+            .strip_prefix('f')
+            .and_then(|r| r.strip_suffix(".cdl"))
+            .and_then(|r| r.parse().ok())
+            .ok_or("ない")?;
+        let text = if n == 0 {
+            format!("{HEAD}import {{ v1 }} from \"./f1.cdl\";\n{ROOT}")
+        } else if n + 1 < self.0 {
+            format!(
+                "\"use cdl 1\";\nimport {{ v{} }} from \"./f{}.cdl\";\nexport const v{n} = 1;\n",
+                n + 1,
+                n + 1
+            )
+        } else {
+            format!("\"use cdl 1\";\nexport const v{n} = 1;\n")
+        };
+        Ok(Source {
+            id: name.to_owned(),
+            text,
+        })
+    }
+}
+
+/// 読み込むファイル数の上限（AUDIT P6）: ちょうどなら成功し、1 超えると E5013。
+#[test]
+fn module_count_limit() {
+    let run = |files: usize, max: u32| {
+        Engine::new()
+            .with_schema(schema())
+            .with_limits(Limits {
+                max_modules: max,
+                ..Limits::default()
+            })
+            .check(&Chain(files), "./f0.cdl")
+    };
+    assert!(run(5, 5).is_ok());
+    let diags = run(6, 5).unwrap_err();
+    assert_eq!(diags.first().map(|d| d.code), Some(Code::ModuleLimit));
+}
+
+/// `Limits` の極端な値（0 と最大）でも、パニックも abort もしない（AUDIT「確かめられなかった」の解消）。
+#[test]
+fn extreme_limits_never_panic() {
+    let src = format!(
+        "{HEAD}const xs = [1, 2, 3].map((x) => `${{x}}`);\nfunction f(n: number): number {{ return n + 1; }}\nconst y = f(1);\nexport default (<Root><Item name={{xs[0] ?? \"a\"}} /></Root>);\n"
+    );
+    let d = Limits::default();
+    let zero = Limits {
+        max_source_bytes: 0,
+        max_nesting: 0,
+        max_modules: 0,
+        max_steps: 0,
+        max_call_depth: 0,
+        max_eval_depth: 0,
+        max_string_bytes: 0,
+        max_collection_len: 0,
+        max_nodes: 0,
+        max_value_depth: 0,
+        max_hook_steps: 0,
+    };
+    let max = Limits {
+        max_source_bytes: u32::MAX,
+        max_nesting: u32::MAX,
+        max_modules: u32::MAX,
+        max_steps: u64::MAX,
+        max_call_depth: u32::MAX,
+        max_eval_depth: u32::MAX,
+        max_string_bytes: u32::MAX,
+        max_collection_len: u32::MAX,
+        max_nodes: u64::MAX,
+        max_value_depth: u32::MAX,
+        max_hook_steps: u64::MAX,
+    };
+    assert!(check(&src, max).is_ok());
+    assert!(check(&src, zero).is_err());
+    // 1 つずつ 0 にする。
+    let each: [fn(Limits) -> Limits; 11] = [
+        |l| Limits {
+            max_source_bytes: 0,
+            ..l
+        },
+        |l| Limits {
+            max_nesting: 0,
+            ..l
+        },
+        |l| Limits {
+            max_modules: 0,
+            ..l
+        },
+        |l| Limits { max_steps: 0, ..l },
+        |l| Limits {
+            max_call_depth: 0,
+            ..l
+        },
+        |l| Limits {
+            max_eval_depth: 0,
+            ..l
+        },
+        |l| Limits {
+            max_string_bytes: 0,
+            ..l
+        },
+        |l| Limits {
+            max_collection_len: 0,
+            ..l
+        },
+        |l| Limits { max_nodes: 0, ..l },
+        |l| Limits {
+            max_value_depth: 0,
+            ..l
+        },
+        |l| Limits {
+            max_hook_steps: 0,
+            ..l
+        },
+    ];
+    for f in each {
+        let _ = check(&src, f(d));
+    }
+}
