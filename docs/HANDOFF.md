@@ -81,6 +81,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 | `max_value_depth` | 64 | 値木の深さ。E5011 |
 | `max_steps` | 1,000,000 | Document 全体。E5002 |
 | `max_call_depth` | 64 | E5003 |
+| `max_eval_depth` | 128 | 式と要素の入れ子（呼び出しをまたぐ）。E5012 |
 | `max_string_bytes` | 64 KiB | E5004 |
 | `max_collection_len` | 65,536 | E5005 |
 | `max_nodes` | 1,000,000 | 値木。E5006 |
@@ -159,7 +160,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 | 検査 | 結果 |
 | --- | --- |
-| `cargo test --workspace` | OK（2026-11-11）。125 テスト、失敗 0（各バイナリの `test result` の合計） |
+| `scripts/check-all.sh`（kani 以外） | OK（2026-11-11。AUDIT 修正後）。`cargo test --workspace` は 125 テスト・失敗 0 |
 | `cargo fmt --check` | OK |
 | `cargo clippy --workspace --all-targets -- -D warnings` | OK |
 | `scripts/check-rules.sh` | すべて OK |
@@ -172,7 +173,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 - **Kani: 未実行**。`kani` / `cargo-kani` は `~/.cargo/bin` にある。`#[cfg(kani)]` のハーネスは `cdl-syntax/src/lex.rs`、`cdl-eval/src/{budget,num,eval}.rs` にある（PROTOTYPE-REPORT §5 は 10 個と記す）。このセッションでは実行していない。ハーネスがコンパイルできるかも未確認。
 - **fuzz: 未実行**（使わない決定。F4）。
-- `WITH_KANI=1 scripts/check-all.sh`、`scripts/check-all.sh` 全体: 未実行（個別のスクリプトは上表のとおり実行）。
+- `WITH_KANI=1 scripts/check-all.sh`: 未実行。`scripts/check-all.sh` は kani の行だけが「未実行」で、終了コードは 2。
 - パフォーマンス（ベンチ）: 未実施。`benches/` はない。
 
 ### 5.3 機械で確かめていない主張と、支えるテスト
@@ -187,7 +188,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 ### 5.4 最終精査
 
-`docs/AUDIT.md`（2026-11-11）。**重大な問題が 5 件、未修正**: (P1) `keyof`/`readonly`/`unique` の連鎖で構文解析が abort、(P2) 型エイリアスの倍々展開でメモリ枯渇・エイリアスの長い連鎖で abort、(P3) 呼び出しの深さ × 入れ子で評価器が abort（20 KB の入力）、(P4) 共有された値の深さ検査が指数時間（62 行の入力）、(P5) メモリの総量とテンプレートの途中のバッファに上限がない。詳細・再現入力は AUDIT.md。**Contrast に組み込む前に、少なくとも P1〜P4 の対処を決める**。ホストができる軽減策は、評価を十分なスタックの別スレッドで走らせること（P1・P3 の閾値が上がるだけで、解決ではない。推測）と、`Limits::max_source_bytes` を下げること。
+`docs/AUDIT.md`（2026-11-11）。精査で見つかった重大な問題 5 件（P1〜P5: 構文の前置キーワードの連鎖・型の大きさ・評価の再帰・共有値の深さ検査・メモリの総量）は、同日修正し、各々に適合テストを足した（対処状況の表）。未対処: P6・P7（推測の低い問題）と、精読していない範囲（`check.rs`・`convert.rs` の全行、`Limits` の極端な値）。新しい上限: 型の深さ 128・ノード数 4,096（固定。E3013）、評価の再帰 128（`Limits::max_eval_depth`。E5012）。既定値は暫定。
 
 ## 6. 既知の制限とはまりやすい点
 
@@ -230,5 +231,5 @@ scripts/       check-all.sh, check-rules.sh, check-conformance.sh, check-spec-ex
 3. **変換層**: いまは `Node::prop` で手書きに読む（E7 を E8 で改訂）。型付きの変換（`derive` など）は未実装。スキーマと変換コードの食い違いは E4008 になる（実行時）。スキーマから変換を作るかを決める。
 4. **リロード**: `Program` は不変・`Send + Sync`。差し替え（世代番号・失敗時に旧設定を残す）は Contrast 側（E5）。`load` が失敗したときの診断の通知先（ログか画面か）を決める。ファイル監視と、import 先の変更検知は `Program::files()` が使えるが、監視の実装自体は**未確認**（CDL 側にはない）。
 5. **フックの追加**: Contrast の `Policy` 型（`windowOpen` 以外）と、フックごとの `max_hook_steps` の妥当性。現状は全フック共通の 1 値。
-6. **AUDIT.md の問題の修正**（P1 の前走査の数え漏れ、P2 の型の大きさ・深さの上限、P3 の評価器の再帰、P4 の深さ検査の共有対応、P5 の総量の上限）。修正は SPEC 第 7 章の表に上限を足す変更になるものがあるので、先に `conformance/` のテストを足す。Kani は使わない方針（SPEC 第 12 章）。
+6. **AUDIT.md の残り**（P6・P7、精読していない範囲）と、新しい上限の既定値の妥当性の確認。Kani は使わない方針（SPEC 第 12 章）。
 7. docs の変更のコミットと、固定するコミットの決定（2.7）。
