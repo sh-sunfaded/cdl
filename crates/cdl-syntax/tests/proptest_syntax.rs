@@ -228,9 +228,22 @@ fn props(members: &[PropSig]) -> String {
 }
 
 fn param(p: &Param) -> String {
+    let pattern = match &p.pattern {
+        ParamPattern::Ident(id) => id.name.clone(),
+        ParamPattern::Object(props, _) => {
+            let items: Vec<String> = props
+                .iter()
+                .map(|pp| match &pp.default {
+                    Some(d) => format!("{} = {}", pp.name.name, expr(d)),
+                    None => pp.name.name.clone(),
+                })
+                .collect();
+            format!("{{ {} }}", items.join(", "))
+        }
+    };
     match &p.ty {
-        Some(t) => format!("{}: {}", p.name.name, ty(t)),
-        None => p.name.name.clone(),
+        Some(t) => format!("{pattern}: {}", ty(t)),
+        None => pattern,
     }
 }
 
@@ -387,14 +400,22 @@ fn element(el: &Element) -> String {
 }
 
 fn children_src(children: &[Child]) -> String {
-    children
-        .iter()
-        .map(|c| match c {
-            Child::Element(el, _) => element(el),
-            Child::Fragment(cs, _) => format!("<>{}</>", children_src(cs)),
-            Child::Expr(e, _) => format!("{{{}}}", expr(e)),
-        })
-        .collect()
+    let mut out = String::new();
+    for (i, c) in children.iter().enumerate() {
+        match c {
+            Child::Element(el, _) => out.push_str(&element(el)),
+            Child::Fragment(cs, _) => out.push_str(&format!("<>{}</>", children_src(cs))),
+            Child::Expr(e, _) => out.push_str(&format!("{{{}}}", expr(e))),
+            Child::Text(t, _) => {
+                out.push_str(t);
+                // 続けて書くと 1 つのテキストにつながるので、空の `{}` で区切る（DECISIONS C14）。
+                if matches!(children.get(i + 1), Some(Child::Text(..))) {
+                    out.push_str("{}");
+                }
+            }
+        }
+    }
+    out
 }
 
 fn const_decl(c: &ConstDecl) -> String {
@@ -613,11 +634,32 @@ fn e(kind: ExprKind) -> Expr {
 }
 
 fn param_s() -> impl Strategy<Value = Param> {
-    (name(), proptest::option::of(ty_s())).prop_map(|(n, t)| Param {
+    let simple = prop_oneof![
+        finite().prop_map(|n| e(ExprKind::Number(n))),
+        any::<bool>().prop_map(|b| e(ExprKind::Bool(b))),
+        Just(e(ExprKind::Undefined)),
+    ];
+    let pattern_prop = (name(), proptest::option::of(simple)).prop_map(|(n, d)| PatternProp {
         name: n,
-        ty: t,
+        default: d,
         span: z(),
-    })
+    });
+    prop_oneof![
+        (name(), proptest::option::of(ty_s())).prop_map(|(n, t)| Param {
+            pattern: ParamPattern::Ident(n),
+            ty: t,
+            span: z(),
+        }),
+        (
+            proptest::collection::vec(pattern_prop, 0..3),
+            proptest::option::of(ty_s())
+        )
+            .prop_map(|(props, t)| Param {
+                pattern: ParamPattern::Object(props, z()),
+                ty: t,
+                span: z(),
+            }),
+    ]
 }
 
 fn expr_s() -> impl Strategy<Value = Expr> {
@@ -778,6 +820,9 @@ fn child_s(inner: BoxedStrategy<Expr>) -> impl Strategy<Value = Child> {
         inner.clone().prop_map(|x| Child::Expr(x, z())),
         element_s(inner).prop_map(|el| Child::Element(el, z())),
         Just(Child::Fragment(vec![], z())),
+        // 正規化済みの、空でないテキスト（DECISIONS R1）。
+        proptest::sample::select(&["hi", "a b", "x, y", "ok."][..])
+            .prop_map(|t| Child::Text(t.to_owned(), z())),
     ]
 }
 

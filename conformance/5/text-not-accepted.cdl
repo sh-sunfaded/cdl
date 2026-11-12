@@ -1,0 +1,24 @@
+// §6 子: 子に string を受け付けないコンポーネントにテキストを置くと E3014（DECISIONS R1）。
+// ユーザー定義のコンポーネントは、`children` の型が `string[]` のときだけテキストを受け取れる。
+"use cdl 1";
+import { Contrast, Keybind, Label } from "host:contrast";
+
+function Title(props: { children: string[] }): Element<Label> {
+  return <Label>{props.children}</Label>;
+}
+
+function Box(props: { children?: Element<Keybind>[] }): Element<Contrast> {
+  return <Contrast>{props.children}</Contrast>;
+}
+
+export default (
+  <Contrast>
+    <Keybind keys="a" action="b">text</Keybind>
+    <Title>accepted</Title>
+    <Label>{"x"}</Label>
+  </Contrast>
+);
+
+const rejected = (
+  <Box>text for a user component whose children are elements</Box>
+);

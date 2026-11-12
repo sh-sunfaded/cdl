@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E2002",
+      "severity": "error",
+      "span": {
+        "file": "5/param-default-scope.cdl",
+        "start": 185,
+        "end": 186
+      }
+    }
+  ]
+}

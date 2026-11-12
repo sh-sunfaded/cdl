@@ -31,6 +31,8 @@ struct Case {
     entry: String,
     expected: PathBuf,
     calls: Option<PathBuf>,
+    /// 関数の形のルートに渡す `Env`（`<名前>.env.json` / `env.json`）。
+    env: Option<PathBuf>,
 }
 
 /// 比べる部分だけを取り出した診断。
@@ -149,12 +151,14 @@ fn discover_section(root: &Path, section: &str, cases: &mut Vec<Case>, errors: &
                 continue;
             }
             let calls = Some(path.join("calls.json")).filter(|p| p.is_file());
+            let env = Some(path.join("env.json")).filter(|p| p.is_file());
             cases.push(Case {
                 name: label,
                 files,
                 entry: "main.cdl".to_owned(),
                 expected,
                 calls,
+                env,
             });
         } else if let Some(stem) = file_name.strip_suffix(".cdl") {
             let expected = path.with_file_name(format!("{stem}.expected.json"));
@@ -166,15 +170,18 @@ fn discover_section(root: &Path, section: &str, cases: &mut Vec<Case>, errors: &
             let files = BTreeMap::from([(id.clone(), fs::read_to_string(path).unwrap())]);
             let calls =
                 Some(path.with_file_name(format!("{stem}.calls.json"))).filter(|p| p.is_file());
+            let env = Some(path.with_file_name(format!("{stem}.env.json"))).filter(|p| p.is_file());
             cases.push(Case {
                 name: format!("{section}/{stem}"),
                 files,
                 entry: id,
                 expected,
                 calls,
+                env,
             });
         } else if let Some(stem) = file_name
             .strip_suffix(".calls.json")
+            .or_else(|| file_name.strip_suffix(".env.json"))
             .or_else(|| file_name.strip_suffix(".expected.json"))
         {
             if !path.with_file_name(format!("{stem}.cdl")).is_file() {
@@ -314,10 +321,19 @@ fn run(case: &Case) -> Outcome {
                     }
                 })
                 .collect();
-            Outcome {
-                result: Ok(normalize(element_json(program.document()))),
-                calls,
-            }
+            let env = case
+                .env
+                .as_ref()
+                .map(|p| {
+                    json_value(&serde_json::from_str(&fs::read_to_string(p).unwrap()).unwrap())
+                        .unwrap()
+                })
+                .unwrap_or(cdl_host::Value::Undefined);
+            let result = match program.render(&env) {
+                Ok(el) => Ok(normalize(element_json(&el))),
+                Err(ds) => Err(ds.iter().map(key_of).collect()),
+            };
+            Outcome { result, calls }
         }
     }
 }
@@ -398,7 +414,7 @@ fn names_follow_the_convention() {
 /// 禁止構文の id（CLAUDE.md）が、すべて `forbidden/` に置いてある。
 #[test]
 fn every_forbidden_id_has_a_case() {
-    const IDS: [&str; 19] = [
+    const IDS: [&str; 18] = [
         "let",
         "var",
         "class",
@@ -416,8 +432,7 @@ fn every_forbidden_id_has_a_case() {
         "ref",
         "destructuring",
         "rest-param",
-        "text-child",
-        "and-render",
+        "and-nonboolean",
     ];
     let dir = suite_root().join("forbidden");
     for id in IDS {

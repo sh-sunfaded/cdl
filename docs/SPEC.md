@@ -1,6 +1,6 @@
 # CDL 仕様書 (Contrast Document Language)
 
-Nov 3, 2026 · @K
+v0.1 · Nov 12, 2026 · @K
 
 ## 1. 概要
 
@@ -63,9 +63,17 @@ Contrast は Rust + Smithay 製の Wayland コンポジタです。CDL は独立
 | テンプレート文字列 | バッククォートで囲み、`${式}` で補間する。エスケープは文字列と同じものに `` \` `` と `\$` を加える。タグ付きテンプレートは不可 |  |
 | 真偽 | `true` / `false` |  |
 | 不在 | `undefined`（型は `T \| undefined`） |  |
-| JSX | 要素 `<A />` `<A>…</A>`、フラグメント `<>…</>`。属性値は `"…"` か `{式}`、子は要素か `{式}` | `<Animation enabled />` |
+| JSX | 要素 `<A />` `<A>…</A>`、フラグメント `<>…</>`。属性値は `"…"` か `{式}`、子は要素・テキスト・`{式}` | `<Animation enabled />` |
 
-JSX のテキスト子（`<Label>text</Label>`）は使えません。文字列を子に置くときは `{"text"}` と書きます。
+JSX のテキスト子（`<Label>text</Label>`）は、子に string を受け付けると宣言したコンポーネントにだけ置けます（第 6 章。ユーザー定義のコンポーネントは、`children` の型が `string[]` のとき）。受け付けないコンポーネントに置くと E3014 です。テキストは次の規則で正規化します（DECISIONS R1）。
+
+1. 行に分け、各行の前後の空白（空白・タブ・CR）を除く。ただし、最初の行の先頭と最後の行の末尾の空白は残す。
+2. 空になった行を捨てる。
+3. 残りを 1 つの空白でつなぐ。
+
+これは JSX の標準（Babel / TypeScript）と同じ規則で、単一行のテキストの前後の空白は残ります（`<Label> hi </Label>` は `" hi "`）。標準と違うのは 1 点だけで、**空白だけのテキストは、常に捨てます**（子になりません）。テキストを受け付けない要素の間の空白（`<A /> <B />`）が、型エラーにならないようにするためです。
+
+要素や `{…}` をはさむと別のテキストになり（つながりません）、`{"text"}` と書いた string は加工しません。テキストの中の記号（`,` `(` `'` `"` `\` など）はそのままです。HTML の文字参照（`&amp;` など）は使えず、テキストに `&` を書くと E1012 です（`&` を含む文字列は `{"a & b"}` と書く）。評価結果の子ノードは、要素かテキスト（string）です。
 
 JSX の属性文字列（`name="…"`）は JSX と同じく、エスケープを解釈しません（`"a\nb"` は `\` と `n` を含む 4 文字）。エスケープが要るときは `name={"…"}` と書きます。文字参照（`&amp;` など）は使えず、属性文字列に `&` を書くと字句エラーです（`&` を含む文字列は `name={"a & b"}` と書く）。
 
@@ -81,7 +89,7 @@ JSX の属性文字列（`name="…"`）は JSX と同じく、エスケープ�
 
 使えるキーワード: `const` `function` `return` `if` `else` `switch` `case` `default` `type` `interface` `import` `export` `from` `satisfies` `true` `false` `undefined`
 
-TypeScript や React にあって CDL にない構文は、予約して使うと診断します: `let` `var` `class` `new` `this` `null` `for` `while` `do` `break` `continue` `async` `await` `yield` `try` `catch` `throw` `enum` `namespace` `as`。React の Hooks、イベントハンドラ属性、`ref`、`key`、Context も存在しません。具体的には、`use[A-Z0-9_]` で始まる名前（`useState` など。`user` は使える）、`on[A-Z]` で始まる属性、`ref` 属性、`key` 属性は、専用の診断になります。
+TypeScript や React にあって CDL にない構文は、予約して使うと診断します: `let` `var` `class` `new` `this` `null` `for` `while` `do` `break` `continue` `async` `await` `yield` `try` `catch` `throw` `enum` `namespace` `as`。React の Hooks、イベントハンドラ属性、`ref`、Context、状態、子としての関数（render props）は存在しません（`key` は属性として書けます。第 6 章）。具体的には、`use[A-Z0-9_]` で始まる名前（`useState` など。`user` は使える）、`on[A-Z]` で始まる属性、`ref` 属性は、専用の診断（E1007）になります。
 
 キーワードは、プロパティ名（`{ default: 1 }`、`a.type`、`<X type="…" />`）としては使えます。束縛の名前には使えません。
 
@@ -108,7 +116,7 @@ TypeScript や React にあって CDL にない構文は、予約して使うと
 ### 規則
 
 - 部分型は、ユニオンの包含（`"a"` は `"a" | "b"` に入る）と、不変なコンテナ（配列・タプル・`Record`・オブジェクトのフィールド・`Element<…>`）の共変性に限る。関数型は不変（同一の型どうしだけ代入できる）。オブジェクトと props は、TypeScript の過剰プロパティ検査を常に適用し、余分なフィールドを許さない（幅部分型はない）。
-- ユニオンにできるのは、リテラル型どうし、`T | undefined`、`Element<A | B>` だけ。オブジェクト型どうしのユニオンや `string | number` は書けない。
+- ユニオンにできるのは、リテラル型どうし、`T | undefined`、`Element<A | B>`、`c && B` の型 `false | B`（B は 1 つの型。第 5 章）、子の型 `Element<A> | string`（要素とテキストの混在。`Element<A | B> | string` や `"a" | Element<A>` も同じ）だけ。オブジェクト型どうしのユニオンや `string | number` は書けない。`false | B` の `false` は、配列リテラルの要素などで型を広げるときも `boolean` に広げない。
 - 式の型を合わせるとき（`?:` の両枝、`??` の両辺、配列リテラルの要素、推論する戻り値）は、片方がもう片方に置けるなら広いほうの型にし、そうでなければユニオンにする。文脈型のもとで検査したオブジェクトリテラルの型は、文脈型になる。
 - プリミティブのリテラルで初期化した `const` はリテラル型を持つ（`const m = "a";` の型は `"a"`）。オブジェクトや配列の中のリテラルは基本型に広げる。文脈型があれば、それを優先する。配列リテラルの要素型は、広げた要素型のユニオンになる。
 - プロパティがないことと、値が `undefined` であることは区別しない（`k={undefined}` と明示してもよい）。
@@ -132,11 +140,20 @@ CDL は TypeScript の宣言と式のサブセットに、JSX を加えたもの
 | `import { … } from "…";` / `import type { … } from "…";` | 他ファイル・ホスト提供の名前を取り込む（第 9 章） |
 | `const name: T = expr;` | 不変の束縛。型注釈は省略可（局所推論） |
 | `type Name = T;` / `interface Name { … }` | 型宣言 |
-| `function name(a: A): R { … }` / `(a: A): R => …` | 純関数 |
+| `function name(a: A): R { … }` / `(a: A): R => …` | 純関数。引数は名前か、1 階層のオブジェクトパターン `{ a, b = 既定値 }: P`（下記） |
 | `function Name(props: P): Element<…> { return <…/>; }` | コンポーネント。名前は ASCII の大文字で始め、props を 1 つだけ受け取る。戻り値型は `Element<…>` に限る。JSX からだけ使え、関数として呼べない |
 | `export` | 他ファイルへ公開する |
-| `export default <…/>;` | ルート要素の宣言（第 6 章） |
+| `export default <…/>;` / `export default function App(env: Env): Element<…> { … }` | ルートの宣言。要素（静的な形）か、ホストの環境 `Env` を受け取る関数（第 6 章） |
 | `export const policy = { … } satisfies Policy;` | ポリシーの宣言（第 8 章） |
+
+#### 引数の分割代入
+
+関数・コンポーネントの引数に、1 階層のオブジェクトパターン `{ a, b = 既定値 }: P` を書けます（DECISIONS R4）。
+
+- 型注釈 `: P` は必須（`P` はオブジェクト型）。文脈からは推論しない（`xs.map(({ a }: { a: number }) => …)`）。コンポーネントは、props を 1 つ受け取る点は変わらない。
+- 取り出す名前は、`P` のプロパティ名そのまま。`P` にない名前は E3002。別名（`{ a: x }`）・入れ子（`{ a: { b } }`）・rest（`{ ...r }`）・計算キーは書けない（E1005）。`const` への分割代入も、従来どおり書けない。
+- 既定値 `b = expr` は、`P` の中で省略可能（`b?: T`）な prop にだけ付けられる（省略可能でなければ E3015。値の型は `T`、合わなければ E3001）。付けた名前の型は、本体の中では `T`（`undefined` が除かれる）。付けなければ `T | undefined` のまま。
+- 既定値の式は純粋で、その prop の値が `undefined`（ないことを含む）のとき、呼び出しごとに評価され、評価ステップを消費する。外側の値は参照できるが、同じ関数の引数は参照できない（E2002）。
 
 関数とコンポーネントは、再帰も相互再帰もできません。トップレベルの宣言どうしの参照（呼び出しに限らず、名前が現れるすべての箇所）は循環してはいけません。
 
@@ -145,7 +162,8 @@ CDL は TypeScript の宣言と式のサブセットに、JSX を加えたもの
 ### 式
 
 - 算術 `+ - * / %` と単項の `-`、比較 `=== !== < <= > >=`（`==` と `!=` はない）、論理 `&& || !`、`??`
-  - `&& || !` のオペランドは `boolean` だけ（真とみなせる値による判定はない）
+  - `||` と `!` のオペランドは `boolean` だけ（真とみなせる値による判定はない）
+  - `&&` の左辺は `boolean` だけ（`number`・`string`・`undefined` を含む型は E3006）。右辺はどんな型でもよく、式の型は `false | B`（B は右辺の型。B が `boolean` なら `boolean`）。左辺が `false` なら右辺は評価しない
   - `+ - < <= > >=` は `number`・`Length`・`Duration` に使う（同じ単位どうし）。文字列の連結は、テンプレート文字列で書く
   - `=== !==` は、プリミティブ・リテラル・単位つきの値・`undefined` に使う。オブジェクト・配列・要素どうしや、重なりのない型どうしは比べられない
   - `%` の結果の符号は被除数に合わせる（JS と同じ）
@@ -165,13 +183,14 @@ JSX の式:
 - 要素 `<Name a="x" b={expr} flag>…</Name>` と自己閉じ `<Name />`。真偽の属性は `flag` と省略できる
 - フラグメント `<>…</>`。属性のスプレッド `<Name {...props} />`
 - スプレッドとほかのキー・属性が重なったら、あとに書いたものが勝つ（オブジェクトリテラルでも同じ）。明示のキーどうしの重複は誤り。値が `undefined` のフィールドのスプレッドは、前の値を上書きしない
-- 条件は `c ? <A /> : undefined`。`undefined` の子は無視される。`c && <A />` は `false` が子になるので使えない
+- 条件は `c ? <A /> : undefined` か `c && <A />`。`false` と `undefined` の子は、どの子の位置（直接の子・配列・フラグメントの中）にも置け、評価結果から取り除かれる。`true`（と `boolean`）は子に置けない（E4005）
+- `key` 属性: `key="a"` / `key={expr}`（string だけ。number は E3017 で、`key={`${n}`}` のようにテンプレート文字列で文字列にする。それ以外の型は E3001）。props ではなく、第 6 章の規則で要素のノードに残る
 - 繰り返しは `xs.map((x) => <Item … />)`。配列の子は、自動で平坦化される
 - `{…}` の中は純粋な式だけで、イベントハンドラ属性や `ref` はない
 
 0 除算は評価エラーです。浮動小数は IEEE 754 binary64 の丸めに従い、`NaN` や `±Infinity` を生む演算も評価エラーです。
 
-TypeScript の構文のうち、次のものは書けません: 分割代入（引数を含む）、`enum`、import の改名、既定引数と省略可能な引数、計算プロパティ名、メソッド構文、`interface … extends`、交差型、`keyof` などの型演算子、正規表現、BigInt、カンマ演算子、`export { … }` と再エクスポート、ブロックの中の関数宣言、関数呼び出しの引数のスプレッド（`f(...xs)`）。省略プロパティ `{ keys }` と、任意の式の位置の `satisfies` は書けます。
+TypeScript の構文のうち、次のものは書けません: `const` への分割代入と、引数パターンの別名・入れ子・rest、`enum`、import の改名、既定引数と省略可能な引数（引数パターンの `{ a = 既定値 }` は書ける）、計算プロパティ名、メソッド構文、`interface … extends`、交差型、`keyof` などの型演算子、正規表現、BigInt、カンマ演算子、`export { … }` と再エクスポート、ブロックの中の関数宣言、関数呼び出しの引数のスプレッド（`f(...xs)`）。省略プロパティ `{ keys }` と、任意の式の位置の `satisfies` は書けます。
 
 ### 文法（抜粋, EBNF）
 
@@ -180,11 +199,16 @@ file      = directive { item } ;
 directive = STRING ";" ;            (* 値は "use cdl N" に限る *)
 item      = import | export | decl ;
 import    = "import" [ "type" ] "{" names "}" "from" STRING ";" ;
-export    = "export" ( decl | "default" expr ";" ) ;
+export    = "export" ( decl | "default" ( expr ";" | rootfn ) ) ;
+rootfn    = "function" [ IDENT ] "(" param ")" ":" type block ;   (* 名前は束縛しない。アロー関数 expr でも書ける *)
 decl      = const | typedecl | function ;
 const     = "const" IDENT [ ":" type ] "=" expr ";" ;
 function  = "function" IDENT "(" [ params ] ")" ":" type block ;
 arrow     = "(" [ params ] ")" [ ":" type ] "=>" ( expr | block ) ;
+params    = param { "," param } [ "," ] ;
+param     = IDENT [ ":" type ] | pattern ":" type ;   (* pattern は型注釈が必須 *)
+pattern   = "{" [ pprop { "," pprop } [ "," ] ] "}" ;   (* 1 階層だけ。別名・入れ子・rest はない *)
+pprop     = IDENT [ "=" expr ] ;
 block     = "{" { const } stmt "}" ;
 stmt      = "return" expr ";" | if | switch ;
 if        = "if" "(" expr ")" block "else" ( block | if ) ;
@@ -193,15 +217,45 @@ case      = "case" literal ":" stmt ;
 expr      = binary [ "?" expr ":" expr ] | jsx | frag | "(" expr ")" ;
 jsx       = "<" NAME { attr } ( "/>" | ">" { child } "</" NAME ">" ) ;
 frag      = "<>" { child } "</>" ;
-attr      = IDENT [ "=" ( STRING | "{" expr "}" ) ] | "{" "..." expr "}" ;
-child     = jsx | frag | "{" [ expr ] "}" | TEXT ;   (* 中身が空白とコメントだけの {} は子にならない *)
+attr      = IDENT [ "=" ( STRING | "{" expr "}" ) ] | "{" "..." expr "}" ;   (* key も IDENT。ref と on[A-Z]… は不可 *)
+child     = jsx | frag | "{" [ expr ] "}" | TEXT ;
+(* 中身が空白とコメントだけの {} は子にならない。TEXT は第 3 章の規則で正規化し、空になれば子にならない。`&` を含む TEXT は E1012 *)
 ```
 
 オブジェクト・配列・引数リストは末尾カンマを許容します。TypeScript と同じく、オブジェクトリテラルの区切りはカンマ、`interface` と型リテラルの区切りは `;` か `,` です。
 
 ## 6. ドキュメントモデル
 
-ホストが読み込むエントリファイルは、ちょうど 1 つの `export default`（ルート要素）を持ちます。評価すると、コンポーネントがすべて展開された、不変の要素ツリー（ドキュメント）になります。各ノードは、その要素を作った JSX の位置（span）と、展開の途中で通ったコンポーネント呼び出しの位置の列を保持するので、ホストは「どの行の設定か」を診断に使えます。ライブラリとして読まれるファイルは `export default` を持てません。
+ホストが読み込むエントリファイルは、ちょうど 1 つの `export default`（ルート）を持ちます。ルートは、要素（静的な形）か、引数 1 つの関数（関数の形。下記）です。評価すると、コンポーネントがすべて展開された、不変の要素ツリー（ドキュメント）になります。各ノードは、その要素を作った JSX の位置（span）と、展開の途中で通ったコンポーネント呼び出しの位置の列を保持するので、ホストは「どの行の設定か」を診断に使えます。ライブラリとして読まれるファイルは `export default` を持てません。
+
+### ルートの関数の形（UI = f(env)）
+
+`export default` には、要素の代わりに、ホストの環境 `Env` を受け取る関数を書けます（`function App(…)`・名前のない `function (…)`・アロー関数。名前は束縛しません。DECISIONS U1）。
+
+- 引数は 1 つで、名前つき引数か、1 階層のオブジェクトパターン。型注釈は必須で、型はホストが宣言した `Env`（`import type { Env } from "host:contrast"`）と完全に一致しなければならない（E4012）。戻り値の型注釈も必須で、ホストが指定したルート要素（E4001）。
+- `Env` はホストが Schema ビルダーで宣言する（`SchemaBuilder::env`）。宣言していないホストで関数の形を書くと E4013。
+- 評価は純粋なまま。ホストは 1 回読み込んだ `Program` から、`Program::render(&env)` で何度でも要素ツリーを作る。`render` ごとに独立したステップ予算を使い、同じ `env` からは必ず同じ木になる。`env` の値が `Env` の型に合わなければ E4014。
+- 静的な形のルートでは、`Env` は無視される（`render` は同じ木を返す）。
+- 関数の形のルートの評価の誤りは、`render` のときに報告される（読み込み時には、トップレベルの `const` の評価と型検査までを行う）。
+
+出力ごとの scale で gap を変える設定（ホストの `Env` は `{ output: { name: string; width: number; height: number; scale: number } }`）:
+
+```tsx
+"use cdl 1";
+import { Contrast, Appearance, Keybind } from "host:contrast";
+import type { Env } from "host:contrast";
+
+const BASE = px(8);
+
+export default function App({ output }: Env): Element<Contrast> {
+  return (
+    <Contrast>
+      <Appearance gap={BASE * output.scale} radius={BASE} />
+      <Keybind keys={`output-${output.name}`} action={`width ${output.width}`} />
+    </Contrast>
+  );
+}
+```
 
 ### スキーマ
 
@@ -229,10 +283,13 @@ export declare function Keybind(props: {
 
 - props は、`name={expr}`、`name="text"`、真偽値の省略形 `flag` で書く。
 - props は閉じた型。省略できるのは `?` 付きのものだけで、それ以外の欠落と余分な props は診断される。
-- 子は、平坦化して `undefined` を取り除いた配列として渡される。`children` の型は `Element<…>[]`（省略可能にしてよい）。`children` 属性と JSX の子は同時に書けない。
-- 子に置けるのは、ホストが宣言した型の要素だけ。型の違う子は診断される。
+- 子は、平坦化して `false` と `undefined` を取り除いた配列として渡される。`children` の型は `Element<…>[]`（省略可能にしてよい）。テキスト子を受け取るユーザー定義のコンポーネントは、`children` の型を `string[]`（テキストだけ）か `(Element<…> | string)[]`（要素とテキストの混在）にする。`children` 属性と JSX の子は同時に書けない。
+- 子に置けるのは、ホストが宣言した型の要素だけ。型の違う子は診断される。テキスト（string）は、ホストが「子に string を受け付ける」と宣言したコンポーネントにだけ置ける（それ以外は E3014。ホストの Rust API では `ComponentDef::text_children()`）。評価結果の子ノードは、要素かテキスト（string）。
 - ホストが一意と宣言した子（例: `Appearance`）の重複はエラー（後勝ちにしない）。`map` が作る子は静的に数えられないので、評価後の要素ツリーで検査する。
+- スロット: 要素を props に渡せる（`<Panel header={<Title />}>…</Panel>`）。props の型は `Element<Title>`（またはユニオン `Element<A | B>`・配列 `Element<Title>[]`）。スロットの要素は、子とは別に、props の値としてノードに残る（値木の JSON では、props の値が要素のオブジェクト（配列なら要素のオブジェクトの配列）になる）。型違いの要素を渡すと E3016（ホストのコンポーネントでも、ユーザー定義でも。要素でない値は従来どおり E4004 / E3001）。`false` はスロットに置けない（`c ? <T /> : undefined` と書く）。ホストは `Node::slot` / `Node::slots` で読む。
 - 値が `undefined` の props は、要素ツリーに含めない。
+- `key`: 属性 `key`（string だけ）は props ではない。コンポーネントは `props.key` を読めず、props の型に `key` は書けない（E3002）。評価結果のノードに `key` として残る。同じ親の子（フラグメントと配列の展開後）で `key` が重複したら E4011（`key` のない子は何個あってもよい）。文字列リテラルの key（`key="a"`・`key={"a"}`）どうしの重複は、同じ親の JSX の子（フラグメントの中を含む）の中で、評価の前（check）にすべて報告する。`map` などが作る動的な key の重複は、評価後の要素ツリーで検査し、見つかったものをすべて報告する（`{...x}` に含まれる `key` は props 扱いにならず、「`key` は props ではない」と報告する）。ユーザー定義のコンポーネントに付けた `key` は、展開後のルート要素のノードの `key` になる（付けなければ `key` なし。コンポーネントの中のルート要素の `key` は引き継がない）。
+- 要素の同一性（ホストが旧ツリーと差分を取るとき）は、`key` → ホストが宣言した識別 prop（`Keybind` の `keys` など。通常の props として残る）→ 親と位置、の順で決める。ホストは `cdl-host` の `Node::key()` で `key` を読む。
 - 値が関数の props は、要素ツリーに置けない。
 - ツリーは評価後に不変で、ホストは旧ツリーとの差分を取ってリロードできる。
 
@@ -254,6 +311,34 @@ export default (
     <Appearance gap={BASE * 2} radius={BASE} focusColor={color("#89b4fa")} />
     <Animation duration={ms(120)} enabled />
     {binds.map((b) => <Keybind keys={b.keys} action={b.action} />)}
+  </Contrast>
+);
+```
+
+テキスト子・条件描画・`key`・引数の分割代入を使った例（ホストは、`Label` が子に string を受け付けると宣言している）:
+
+```tsx
+"use cdl 1";
+import { Contrast, Keybind, Label } from "host:contrast";
+
+const binds = [
+  { id: "term", keys: "mod+Return", action: "spawn terminal" },
+  { id: "close", keys: "mod+q", action: "close" },
+];
+
+function Bind({ keys, action = "noop" }: { keys: string; action?: string }): Element<Keybind> {
+  return <Keybind keys={keys} action={action} />;
+}
+
+const verbose = true;
+
+export default (
+  <Contrast>
+    <Label>
+      Keybinds
+    </Label>
+    {binds.map((b) => <Bind key={b.id} keys={b.keys} action={b.action} />)}
+    {verbose && <Label>{"2 binds"}</Label>}
   </Contrast>
 );
 ```
@@ -383,11 +468,11 @@ import { Contrast } from "host:contrast";
 | E0xxx | 字句 | 閉じていない文字列、不正なエスケープ |
 | E1xxx | 構文 | 期待したトークンがない、構文ネスト深さの超過 |
 | E2xxx | 名前解決 | 未定義の名前、循環参照、再帰呼び出し |
-| E3xxx | 型検査 | 型不一致、未知のキー、`switch` の網羅性不足 |
-| E4xxx | スキーマ適合 | 組み込みコンポーネントの props の欠落・余分・型違い、子の型違い、ルート要素の違い、一意な子の重複、`Policy` にないフック |
+| E3xxx | 型検査 | 型不一致、スロットの要素の型違い、未知のキー、`switch` の網羅性不足、テキスト子を受け付けない位置のテキスト、非省略 prop への既定値 |
+| E4xxx | スキーマ適合 | ルート関数の引数・`Env` の不一致、組み込みコンポーネントの props の欠落・余分・型違い、子の型違い、ルート要素の違い、一意な子の重複、`key` の重複、`Policy` にないフック |
 | E5xxx | 評価 | リソース上限超過、0 除算、オーバーフロー |
 
-E3 と E4 の境界: ホストの組み込みコンポーネントと `Policy` についての検査は E4、それ以外のオブジェクト型の検査（CDL 内で書いたコンポーネントや型を含む）は E3 です。
+E3 と E4 の境界: ホストの組み込みコンポーネントと `Policy` についての検査は E4、それ以外のオブジェクト型の検査（CDL 内で書いたコンポーネントや型を含む）は E3 です。例外として、テキスト子を受け付けないコンポーネントへのテキスト（E3014）と、スロットの型違いの要素（E3016）は、ホストの組み込みに対するものも E3 とします（string が子に置ける型かどうかという、型の検査として扱うため。DECISIONS R1）。
 
 ### 出力形式
 
@@ -415,7 +500,7 @@ cdl-diag ← cdl-syntax ← cdl-sema ← cdl-eval ← cdl-host ← cdl-cli
 
 - 公開 API の互換性（semver）を約束するのは `cdl-host` だけで、他のクレートは内部実装として自由に変えられる。
 - コアのクレートは、ファイルシステム・環境変数・時刻に触れない。必要な入力は、すべて `cdl-host` の引数から渡される。
-- ホストは、評価結果の値木を、スキーマに対応する Rust の型へ変換して使う。変換に失敗したら、要素の位置つきの診断（E4008）として返る。プロトタイプの `cdl-host` は、変換を派生マクロではなく参照 API（`Node::prop` など）で提供する（DECISIONS E7・E8）。
+- ホストは、評価結果の値木を、スキーマに対応する Rust の型へ変換して使う。変換に失敗したら、要素の位置つきの診断（E4008）として返る。プロトタイプの `cdl-host` は、変換を派生マクロではなく、手書きで実装する trait `FromNode`（ノード）・`FromValue`（props の値）と `Node` の API（`prop` / `children_of` / `unique_child` / `slot` など）で提供する（DECISIONS E7・E8・U4）。ルートが関数の形のときは、`Program::render(&env)` で要素ツリーを作る（DECISIONS U1）。
 - CDL のプロトタイプ段階に限り、`oxc_parser` で構文を読み、CDL が許す範囲外の構文を診断で弾く構成を許す。本実装では `cdl-syntax` の自前パーサに置き換え、適合テストスイート（第 12 章）で同じ結果を保証する。
 - Contrast 側の仕様（フック一覧、スキーマ、リロード時の挙動）は Contrast のリポジトリで管理し、CDL の仕様書には書かない。
 
@@ -455,7 +540,7 @@ cdl-diag ← cdl-syntax ← cdl-sema ← cdl-eval ← cdl-host ← cdl-cli
 
 ### 適合テストスイート
 
-`conformance/` に、言語仕様の節番号と対応する `.cdl` と期待結果（値木または診断の JSON）を置きます。値木の JSON では、要素を `{"element": "Name", "props": {…}, "children": […]}`、単位つきの値を `{"length": 16}` `{"duration": 120}` `{"color": [r, g, b, a]}`、配列の中の `undefined` を `{"undefined": true}` と書き、`number`・`string`・`boolean` はそのまま書きます。値木の比較では span を比べず、診断の比較では span を比べます。実装に依存しない形式なので、将来の別実装（例: Contrast のプロトタイプ用パーサ）が同じスイートで検証できます。
+`conformance/` に、言語仕様の節番号と対応する `.cdl` と期待結果（値木または診断の JSON）を置きます。値木の JSON では、要素を `{"element": "Name", "key": "k", "props": {…}, "children": […]}`（`key` は付いているときだけ。子は要素のオブジェクトか、テキストの文字列）、単位つきの値を `{"length": 16}` `{"duration": 120}` `{"color": [r, g, b, a]}`、配列の中の `undefined` を `{"undefined": true}` と書き、`number`・`string`・`boolean` はそのまま書きます。値木の比較では span を比べず、診断の比較では span を比べます。実装に依存しない形式なので、将来の別実装（例: Contrast のプロトタイプ用パーサ）が同じスイートで検証できます。
 
 ## 13. バージョニングと互換性
 
@@ -504,9 +589,10 @@ export default (
 決めないと実装に進めない項目を、影響の大きい順に並べます。
 
 - [x] 子の型付け: 子に許す要素の型を `Element<A | B>[]` と書く現案でよいか → 現案（DECISIONS B1・B5・B6）
-- [x] JSX のテキスト子（`<Label>text</Label>`）を許すか、`{"text"}` だけにするか → `{"text"}` だけ（A1）
-- [x] 要素の同一性: `key` を導入するか → 導入しない（C4）
-- [x] 条件描画: `c ? <A /> : undefined` に加えて `c && <A />` を許すか → 許さない（A2）
+- [x] JSX のテキスト子（`<Label>text</Label>`）を許すか、`{"text"}` だけにするか → 許す（子に string を受け付けると宣言したコンポーネントだけ。2026-11-12 に A1 を改訂。R1）
+- [x] 要素の同一性: `key` を導入するか → 導入する（2026-11-12 に C4 を改訂。R3）
+- [x] 条件描画: `c ? <A /> : undefined` に加えて `c && <A />` を許すか → 許す（左辺は boolean だけ。2026-11-12 に A2 を改訂。R2）
+- [x] 引数の分割代入: 1 階層のオブジェクトパターンと既定値を許すか → 許す（2026-11-12。R4）
 - [x] スキーマの定義元: ホストに一本化するか、CDL 内の `declare` も許すか → ホストの Rust API に一本化（E1）
 - [x] 単位型を関数（`px(8)`）で作る現案でよいか → 現案（G1）
 - [x] TypeScript の構文のうち、どこまで許すか → 第 5 章に一覧（C1）
@@ -519,7 +605,7 @@ export default (
 
 #### 実装が扱った点（プロトタイプ）
 
-- 識別 prop: 導入していない。`key` 属性は E1007 で拒否し、ホストは位置で差分を取る（DECISIONS C4）。一意な子はスキーマの `unique_child` で宣言し、静的に分かる重複は意味解析で、`map` などが作る子は評価後に E4006 で検査する（E2・S3）。
+- 識別 prop: 専用の宣言は導入していない。ホストが識別に使う prop（`Keybind` の `keys` など）は通常の props として残り、ホストは `key` → 識別 prop → 親・位置の順で差分を取る（DECISIONS R3）。`key` 属性は許可（2026-11-12。以前は E1007 で拒否していた）。一意な子はスキーマの `unique_child` で宣言し、静的に分かる重複は意味解析で、`map` などが作る子は評価後に E4006 で検査する（E2・S3）。`key` の重複は評価後に E4011 で検査する。
 - `Math`: この仕様に `Math` の記述はなく、実装もない（未決）。
-- 診断コード表: `docs/DIAGNOSTICS.md`（63 コード）。`cdl-diag` の定義との一致はテストで検査する（F1）。
+- 診断コード表: `docs/DIAGNOSTICS.md`（76 コード。E1009 は廃止で欠番扱い）。`cdl-diag` の定義との一致はテストで検査する（F1）。
 - `fmt` と LSP: 実装していない（G3）。

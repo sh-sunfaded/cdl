@@ -10,8 +10,8 @@ CDL の実装に依存しない形式で、言語仕様（`docs/SPEC.md`）へ�
 
 - 1 ファイルのテスト: `<節>/<名前>.cdl` と、期待結果 `<節>/<名前>.expected.json` を並べて置く。
   `<節>` は SPEC.md の章番号（例: `5/switch-exhaustive.cdl`）。
-- 禁止構文のテスト: `forbidden/<id>.cdl` と `forbidden/<id>.expected.json`。`<id>` は CLAUDE.md の 19 個
-  （`let var class new this null for while try async enum as hooks event-handler ref destructuring rest-param text-child and-render`）。
+- 禁止構文のテスト: `forbidden/<id>.cdl` と `forbidden/<id>.expected.json`。`<id>` は CLAUDE.md の 18 個
+  （`let var class new this null for while try async enum as hooks event-handler ref destructuring rest-param and-nonboolean`）。
 - 複数ファイルのテスト: `<節>/<名前>/` ディレクトリに、エントリの `main.cdl`、ほかのモジュール、期待結果 `expected.json` を置く。
 - 名前に使えるのは ASCII の英小文字・数字・`-`。
 - ファイルの先頭のコメントに、確かめる仕様の節と主張を書く。
@@ -47,12 +47,6 @@ CDL の実装に依存しない形式で、言語仕様（`docs/SPEC.md`）へ�
 複数ファイルのテストでは、`id` はテストのディレクトリからの相対パス（`parts/bind.cdl` など）。
 `..` でテストのディレクトリの外へは出られない。
 
-## 生成スクリプト
+## テストの足し方
 
-スイートのファイルは `tools/generate.py` で生成する。テストを足すときは、`.cdl` と期待結果を直接書かず、スクリプトに足してから実行する。
-
-```
-python3 -I conformance/tools/generate.py
-```
-
-期待する診断の span は、実装の出力からではなく、ソースの中の文字列を探して求める（実装とは独立のオラクル）。生成は決定的で、実行し直しても、変えていないテストのファイルは変わらない。`tools/` はテストとして扱わない。
+`.cdl` と期待結果を直接書いて足す（生成スクリプトはない。v0.1 で削除した）。診断の span は、実装の出力を目で確かめてから期待結果に書く。値木の期待結果は手で書く。ルートが関数の形のケースは、`<名前>.env.json`（複数ファイルのテストは `env.json`）で `Env` の値を渡す。

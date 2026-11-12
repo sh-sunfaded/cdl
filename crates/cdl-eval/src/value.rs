@@ -36,11 +36,40 @@ pub struct Element {
     pub name: String,
     /// 値が `undefined` の props は持たない（DECISIONS B7）。
     pub props: BTreeMap<String, Value>,
-    pub children: Vec<Arc<Element>>,
+    /// `key` 属性の値（number は文字列にしたもの）。props ではない（DECISIONS R3）。
+    pub key: Option<String>,
+    /// 子。要素かテキスト（`false` と `undefined` は取り除いてある。DECISIONS R1・R2）。
+    pub children: Vec<ChildNode>,
     /// この要素を作った JSX の位置（ファイル名を含む）。
     pub span: Span,
     /// 展開の途中で通ったコンポーネント呼び出しの位置（内側から順。DECISIONS D6）。
     pub expanded_from: Vec<Span>,
+}
+
+/// 要素の子ノード。
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChildNode {
+    Element(Arc<Element>),
+    /// テキスト（string）。
+    Text(Arc<str>),
+}
+
+impl ChildNode {
+    /// 要素なら、その要素。
+    pub fn as_element(&self) -> Option<&Arc<Element>> {
+        match self {
+            ChildNode::Element(e) => Some(e),
+            ChildNode::Text(_) => None,
+        }
+    }
+
+    /// テキストなら、その文字列。
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            ChildNode::Text(t) => Some(t),
+            ChildNode::Element(_) => None,
+        }
+    }
 }
 
 /// 関数の値。中身は評価器だけが扱う。
@@ -207,7 +236,12 @@ pub(crate) fn depth_exceeds(
                     return Ok(true);
                 }
                 stack.extend(e.props.values().map(|x| (Tree::Value(x), level)));
-                stack.extend(e.children.iter().map(|c| (Tree::Element(c), level)));
+                stack.extend(
+                    e.children
+                        .iter()
+                        .filter_map(ChildNode::as_element)
+                        .map(|c| (Tree::Element(c), level)),
+                );
             }
         }
     }
@@ -223,7 +257,13 @@ pub(crate) fn count_nodes(e: &Element, limit: u64) -> u64 {
     while let Some(el) = stack.pop() {
         n = n.saturating_add(1);
         values.extend(el.props.values());
-        stack.extend(el.children.iter().map(Arc::as_ref));
+        for c in &el.children {
+            match c {
+                ChildNode::Element(c) => stack.push(c),
+                // テキストは葉 1 つ。
+                ChildNode::Text(_) => n = n.saturating_add(1),
+            }
+        }
         while let Some(v) = values.pop() {
             n = n.saturating_add(1);
             match v {

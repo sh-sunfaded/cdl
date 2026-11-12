@@ -1,0 +1,11 @@
+// §6 key: `map` が作る子の key の重複も、評価後の要素ツリーで E4011 になる。見つかったものは、すべて報告する（DECISIONS R3・U3）。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+const names = ["a", "b", "a", "b", "a"];
+
+export default (
+  <Contrast>
+    {names.map((n) => <Keybind key={n} keys={n} action="z" />)}
+  </Contrast>
+);

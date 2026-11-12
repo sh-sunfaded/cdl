@@ -14,6 +14,8 @@ pub struct Component {
     pub(crate) children: BTreeSet<String>,
     /// 子の中に 1 つまでしか置けない組み込みコンポーネント。
     pub(crate) unique: BTreeSet<String>,
+    /// 子に string（テキスト子）を受け付ける（DECISIONS R1）。
+    pub(crate) text: bool,
 }
 
 /// `host:name` で取り込むモジュール。
@@ -29,11 +31,18 @@ pub struct Schema {
     pub(crate) modules: BTreeMap<String, HostModule>,
     /// ルート要素（モジュール名, コンポーネント名）。
     pub(crate) root: Option<(String, String)>,
+    /// ホストの環境 `Env` の型（ルートを関数の形で書くときの引数。DECISIONS U1）。
+    pub(crate) env: Option<Ty>,
 }
 
 impl Schema {
     pub fn builder() -> SchemaBuilder {
         SchemaBuilder::default()
+    }
+
+    /// ホストが宣言した環境 `Env` の型。
+    pub fn env(&self) -> Option<&Ty> {
+        self.env.as_ref()
     }
 
     /// 名前で組み込みコンポーネントを探す（モジュールの順に最初に見つかったもの）。
@@ -46,6 +55,11 @@ impl Component {
     /// 子の中に 1 つまでしか置けないコンポーネント。
     pub fn unique(&self) -> &BTreeSet<String> {
         &self.unique
+    }
+
+    /// 子にテキスト（string）を置けるか。
+    pub fn accepts_text(&self) -> bool {
+        self.text
     }
 }
 
@@ -64,6 +78,7 @@ impl ComponentDef {
                 props: BTreeMap::new(),
                 children: BTreeSet::new(),
                 unique: BTreeSet::new(),
+                text: false,
             },
         }
     }
@@ -90,6 +105,12 @@ impl ComponentDef {
         self
     }
 
+    /// 子に string（テキスト子 `<Label>text</Label>` と `{"text"}`）を受け付ける（DECISIONS R1）。
+    pub fn text_children(mut self) -> Self {
+        self.component.text = true;
+        self
+    }
+
     /// 子の中に 1 つまでしか置けないコンポーネント。
     pub fn unique_child(mut self, name: &str) -> Self {
         self.component.unique.insert(name.to_owned());
@@ -102,6 +123,7 @@ impl ComponentDef {
 pub struct SchemaBuilder {
     modules: BTreeMap<String, HostModule>,
     root: Option<(String, String)>,
+    env: Option<Ty>,
     errors: Vec<String>,
 }
 
@@ -119,6 +141,27 @@ impl SchemaBuilder {
     /// ルート要素にするコンポーネント。
     pub fn root(mut self, module: &str, component: &str) -> Self {
         self.root = Some((module.to_owned(), component.to_owned()));
+        self
+    }
+
+    /// ホストの環境 `Env` の型を宣言する。`module` の型 `Env` として CDL から見える
+    /// （`import type { Env } from "host:contrast"`）。ルートを関数の形で書けるのは、宣言したときだけ。
+    pub fn env(mut self, module: &str, ty: Ty) -> Self {
+        if contains_function(&ty) {
+            self.errors.push(format!(
+                "{module}: `Env` に関数型は使えない（DECISIONS B9）"
+            ));
+        }
+        if !matches!(ty, Ty::Object(_)) {
+            self.errors
+                .push(format!("{module}: `Env` はオブジェクト型にする"));
+        }
+        let m = self.modules.entry(module.to_owned()).or_default();
+        if m.components.contains_key("Env") || m.types.contains_key("Env") {
+            self.errors.push(format!("{module}: `Env` が重複している"));
+        }
+        m.types.insert("Env".to_owned(), ty.clone());
+        self.env = Some(ty);
         self
     }
 
@@ -198,6 +241,7 @@ impl SchemaBuilder {
             Ok(Schema {
                 modules: self.modules,
                 root: self.root,
+                env: self.env,
             })
         } else {
             Err(self.errors)

@@ -1,24 +1,36 @@
 //! 値木の JSON（DECISIONS D7）。適合テストの期待結果と同じ形。
 
-use cdl_host::{Element, Value};
+use cdl_host::{ChildNode, Element, Value};
 use serde_json::{Map, Value as Json, json};
 
 fn number(n: f64) -> Json {
     serde_json::Number::from_f64(n).map_or(Json::Null, Json::Number)
 }
 
-/// 要素: `{"element": 名前, "props": {…}, "children": […]}`。
+/// 要素: `{"element": 名前, "key": …, "props": {…}, "children": […]}`。`key` は付いているときだけ。
+/// 子は、要素ならこの形のオブジェクト、テキストなら文字列。
 pub fn element_json(e: &Element) -> Json {
     let props: Map<String, Json> = e
         .props
         .iter()
         .map(|(k, v)| (k.clone(), value_json(v)))
         .collect();
-    json!({
-        "element": e.name,
-        "props": props,
-        "children": e.children.iter().map(|c| element_json(c)).collect::<Vec<_>>(),
-    })
+    let children: Vec<Json> = e
+        .children
+        .iter()
+        .map(|c| match c {
+            ChildNode::Element(c) => element_json(c),
+            ChildNode::Text(t) => Json::String(t.to_string()),
+        })
+        .collect();
+    let mut out = Map::new();
+    out.insert("element".to_owned(), Json::String(e.name.clone()));
+    if let Some(key) = &e.key {
+        out.insert("key".to_owned(), Json::String(key.clone()));
+    }
+    out.insert("props".to_owned(), Json::Object(props));
+    out.insert("children".to_owned(), Json::Array(children));
+    Json::Object(out)
 }
 
 /// 値。単位つきの値は `{"length": …}` `{"duration": …}` `{"color": […]}`。

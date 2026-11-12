@@ -1,0 +1,13 @@
+// §6 key: `key` は string だけ。number は E3017（help: テンプレート文字列 `${n}` で文字列にする。DECISIONS U3）。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+const n = 3;
+
+export default (
+  <Contrast>
+    <Keybind key={1} keys="a" action="b" />
+    <Keybind key={n} keys="a" action="b" />
+    <Keybind key={`${n}`} keys="a" action="b" />
+  </Contrast>
+);

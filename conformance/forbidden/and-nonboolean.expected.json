@@ -4,9 +4,9 @@
       "code": "E3006",
       "severity": "error",
       "span": {
-        "file": "forbidden/and-render.cdl",
-        "start": 227,
-        "end": 264
+        "file": "forbidden/and-nonboolean.cdl",
+        "start": 215,
+        "end": 251
       }
     }
   ]

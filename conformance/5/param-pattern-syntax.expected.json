@@ -1,0 +1,49 @@
+{
+  "diagnostics": [
+    {
+      "code": "E1005",
+      "severity": "error",
+      "span": {
+        "file": "5/param-pattern-syntax.cdl",
+        "start": 189,
+        "end": 193
+      }
+    },
+    {
+      "code": "E1005",
+      "severity": "error",
+      "span": {
+        "file": "5/param-pattern-syntax.cdl",
+        "start": 252,
+        "end": 260
+      }
+    },
+    {
+      "code": "E1005",
+      "severity": "error",
+      "span": {
+        "file": "5/param-pattern-syntax.cdl",
+        "start": 324,
+        "end": 333
+      }
+    },
+    {
+      "code": "E1005",
+      "severity": "error",
+      "span": {
+        "file": "5/param-pattern-syntax.cdl",
+        "start": 389,
+        "end": 406
+      }
+    },
+    {
+      "code": "E1005",
+      "severity": "error",
+      "span": {
+        "file": "5/param-pattern-syntax.cdl",
+        "start": 451,
+        "end": 482
+      }
+    }
+  ]
+}

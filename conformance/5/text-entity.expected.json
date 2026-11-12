@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E1012",
+      "severity": "error",
+      "span": {
+        "file": "5/text-entity.cdl",
+        "start": 248,
+        "end": 249
+      }
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "diagnostics": [
+    {
+      "code": "E4011",
+      "severity": "error",
+      "span": {
+        "file": "5/key-duplicate-map.cdl",
+        "start": 336,
+        "end": 375
+      }
+    },
+    {
+      "code": "E4011",
+      "severity": "error",
+      "span": {
+        "file": "5/key-duplicate-map.cdl",
+        "start": 336,
+        "end": 375
+      }
+    },
+    {
+      "code": "E4011",
+      "severity": "error",
+      "span": {
+        "file": "5/key-duplicate-map.cdl",
+        "start": 336,
+        "end": 375
+      }
+    }
+  ]
+}

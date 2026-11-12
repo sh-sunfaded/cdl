@@ -1,0 +1,6 @@
+// §5 宣言: 既定値の式は、同じ関数の引数が見えない場所で評価する。引数を参照したら E2002（DECISIONS R4）。
+"use cdl 1";
+
+function Self({ a, b = a }: { a: number; b?: number }): number {
+  return b;
+}

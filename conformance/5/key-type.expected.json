@@ -1,0 +1,40 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3001",
+      "severity": "error",
+      "span": {
+        "file": "5/key-type.cdl",
+        "start": 250,
+        "end": 254
+      }
+    },
+    {
+      "code": "E3001",
+      "severity": "error",
+      "span": {
+        "file": "5/key-type.cdl",
+        "start": 297,
+        "end": 302
+      }
+    },
+    {
+      "code": "E3001",
+      "severity": "error",
+      "span": {
+        "file": "5/key-type.cdl",
+        "start": 340,
+        "end": 343
+      }
+    },
+    {
+      "code": "E3001",
+      "severity": "error",
+      "span": {
+        "file": "5/key-type.cdl",
+        "start": 385,
+        "end": 388
+      }
+    }
+  ]
+}

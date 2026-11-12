@@ -1,0 +1,22 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "one two"
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "fragment text"
+        ]
+      }
+    ]
+  }
+}

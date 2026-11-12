@@ -1,0 +1,17 @@
+// §5 JSX: `key` 属性（string だけ。number は `${n}` で文字列にする）。props ではなく、ノードの `key` として残る（DECISIONS R3・U3）。
+// ホストが宣言した識別 prop（Keybind の keys）は props として残る。
+"use cdl 1";
+import { Contrast, Keybind, Label } from "host:contrast";
+
+const ids = ["x", "y"];
+
+export default (
+  <Contrast>
+    <Keybind key="str" keys="a" action="b" />
+    <Keybind key={`${1}`} keys="a" action="c" />
+    <Keybind key={`${1.5}`} keys="a" action="d" />
+    {ids.map((id) => <Keybind key={`k-${id}`} keys={id} action="e" />)}
+    <Label key="label">text</Label>
+    <Keybind keys="no-key" action="f" />
+  </Contrast>
+);

@@ -1,0 +1,13 @@
+// §6 key: ルートが関数の形のとき、key の重複は render のときに、すべて報告される（DECISIONS U1・U3）。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+import type { Env } from "host:contrast";
+
+export default function App({ output }: Env): Element<Contrast> {
+  const names = [output.name, "x", output.name, "x"];
+  return (
+    <Contrast>
+      {names.map((n) => <Keybind key={n} keys={n} action="go" />)}
+    </Contrast>
+  );
+}

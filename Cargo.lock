@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "cdl-cli"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cdl-diag",
  "cdl-host",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "cdl-diag"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "proptest",
  "serde",
@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "cdl-eval"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cdl-diag",
  "cdl-sema",
@@ -113,7 +113,7 @@ dependencies = [
 
 [[package]]
 name = "cdl-host"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cdl-diag",
  "cdl-eval",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "cdl-sema"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cdl-diag",
  "cdl-syntax",
@@ -130,7 +130,7 @@ dependencies = [
 
 [[package]]
 name = "cdl-syntax"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "cdl-diag",
  "oxc_allocator",

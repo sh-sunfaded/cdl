@@ -1,9 +1,0 @@
-// §5 JSX: テキスト子は E1009（DECISIONS A1）。
-"use cdl 1";
-import { Contrast, Keybind } from "host:contrast";
-
-export default (
-  <Contrast>
-    <Keybind keys="a" action="b" />hello
-  </Contrast>
-);

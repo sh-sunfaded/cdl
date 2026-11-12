@@ -1,0 +1,22 @@
+// §6 key: ユーザー定義コンポーネントに付けた key は、展開後のルート要素のノードの key になる。
+// 付けなければ key なし（コンポーネントの中のルート要素の key は引き継がない）。DECISIONS R3。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+function Bind(props: { keys: string }): Element<Keybind> {
+  return <Keybind key="inner" keys={props.keys} action="run" />;
+}
+
+function Outer(props: { keys: string }): Element<Keybind> {
+  return <Bind key="from-outer" keys={props.keys} />;
+}
+
+export default (
+  <Contrast>
+    <Bind key="a" keys="1" />
+    <Bind key="a2" keys="2" />
+    <Bind keys="3" />
+    <Outer key="o" keys="4" />
+    <Outer keys="5" />
+  </Contrast>
+);

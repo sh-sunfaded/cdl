@@ -100,9 +100,35 @@ pub struct FunctionDecl {
 /// 引数。型注釈の有無は意味解析で検査する（DECISIONS A3）。
 #[derive(Clone, Debug, PartialEq)]
 pub struct Param {
-    pub name: Ident,
+    pub pattern: ParamPattern,
     pub ty: Option<Type>,
     pub span: Span,
+}
+
+/// 引数の形。1 階層のオブジェクトパターン `{ a, b = 既定値 }` を許す（DECISIONS R4）。
+#[derive(Clone, Debug, PartialEq)]
+pub enum ParamPattern {
+    Ident(Ident),
+    /// `{ a, b = expr }`。別名・入れ子・rest はない。
+    Object(Vec<PatternProp>, Span),
+}
+
+/// オブジェクトパターンの 1 項目 `name` / `name = default`。
+#[derive(Clone, Debug, PartialEq)]
+pub struct PatternProp {
+    pub name: Ident,
+    pub default: Option<Expr>,
+    pub span: Span,
+}
+
+impl Param {
+    /// この引数が束縛する名前（オブジェクトパターンなら各項目の名前）。
+    pub fn bound_names(&self) -> Vec<&Ident> {
+        match &self.pattern {
+            ParamPattern::Ident(id) => vec![id],
+            ParamPattern::Object(props, _) => props.iter().map(|p| &p.name).collect(),
+        }
+    }
 }
 
 /// `{ const …; stmt }`
@@ -330,4 +356,6 @@ pub enum Child {
     Fragment(Vec<Child>, Span),
     /// `{expr}`（span は `{` から `}` まで）
     Expr(Expr, Span),
+    /// テキスト子。値は JSX の空白規則で正規化済みで、空でない（DECISIONS R1）。
+    Text(String, Span),
 }

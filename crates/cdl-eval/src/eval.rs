@@ -3,7 +3,7 @@
 //! 型検査を通った AST を評価する。評価は純粋で、入力はソースとホストから渡された値だけ。
 //! 誤りは最初の 1 つで打ち切る（DECISIONS D9）。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use cdl_diag::Code;
@@ -14,7 +14,7 @@ use crate::Limits;
 use crate::budget::Budget;
 use crate::num::{self, f64_to_i64, js_number_string, normalize};
 use crate::value::Element as Node;
-use crate::value::{FnRepr, Function, Scope, Tree, Value, count_nodes, depth_exceeds};
+use crate::value::{ChildNode, FnRepr, Function, Scope, Tree, Value, count_nodes, depth_exceeds};
 
 /// 評価の誤り。`span` が `None` なら、評価していたトップレベルの宣言の位置にする（DECISIONS D8）。
 #[derive(Clone, Debug, PartialEq)]
@@ -73,6 +73,8 @@ pub(crate) struct Evaluator<'a> {
     depth: u32,
     /// 評価の再帰の深さ（`expr` と `element` の入れ子）。
     nest: u32,
+    /// 見つかった `key` の重複。評価は続けて、すべて報告する（DECISIONS U3）。
+    key_errors: Vec<EvalError>,
 }
 
 impl<'a> UnitState<'a> {
@@ -91,6 +93,7 @@ impl<'a> UnitState<'a> {
                 ItemKind::Const(c) => u.collect_expr(&c.init),
                 ItemKind::Function(f) => {
                     u.functions.insert(f.name.name.clone(), f);
+                    u.collect_params(&f.params);
                     u.collect_block(&f.body);
                 }
                 ItemKind::ExportDefault(x) => u.collect_expr(x),
@@ -105,6 +108,13 @@ impl<'a> UnitState<'a> {
             }
         }
         u
+    }
+
+    fn root_expr(&self) -> Option<&'a Expr> {
+        self.module.items.iter().find_map(|i| match &i.kind {
+            ItemKind::ExportDefault(e) => Some(e),
+            _ => None,
+        })
     }
 
     // ---- アロー関数に番号を振る ------------------------------------------------
@@ -152,10 +162,11 @@ impl<'a> UnitState<'a> {
                 self.collect_expr(callee);
                 args.iter().for_each(|a| self.collect_expr(a));
             }
-            ExprKind::Arrow { body, .. } => {
+            ExprKind::Arrow { params, body, .. } => {
                 self.arrow_ids
                     .insert(std::ptr::from_ref(e), self.arrows.len());
                 self.arrows.push(e);
+                self.collect_params(params);
                 match body {
                     ArrowBody::Expr(x) => self.collect_expr(x),
                     ArrowBody::Block(b) => self.collect_block(b),
@@ -164,6 +175,19 @@ impl<'a> UnitState<'a> {
             ExprKind::Satisfies { expr, .. } => self.collect_expr(expr),
             ExprKind::Element(el) => self.collect_element(el),
             ExprKind::Fragment(children) => self.collect_children(children),
+        }
+    }
+
+    /// 引数パターンの既定値の中のアロー関数にも番号を振る。
+    fn collect_params(&mut self, params: &'a [Param]) {
+        for p in params {
+            if let ParamPattern::Object(props, _) = &p.pattern {
+                for pp in props {
+                    if let Some(d) = &pp.default {
+                        self.collect_expr(d);
+                    }
+                }
+            }
         }
     }
 
@@ -187,6 +211,7 @@ impl<'a> UnitState<'a> {
                 Child::Element(el, _) => self.collect_element(el),
                 Child::Fragment(cs, _) => self.collect_children(cs),
                 Child::Expr(x, _) => self.collect_expr(x),
+                Child::Text(..) => {}
             }
         }
     }
@@ -247,10 +272,12 @@ impl<'a> Evaluator<'a> {
             budget: Budget::new(steps),
             depth: 0,
             nest: 0,
+            key_errors: Vec::new(),
         }
     }
 
     pub(crate) fn reset_budget(&mut self, steps: u64) {
+        self.key_errors.clear();
         self.budget = Budget::new(steps);
         self.depth = 0;
         self.nest = 0;
@@ -287,15 +314,38 @@ impl<'a> Evaluator<'a> {
         Ok(())
     }
 
+    /// エントリファイルのルートが、関数の形（`export default function …` / アロー関数）か。
+    pub(crate) fn is_function_root(&self, entry: usize) -> bool {
+        self.units
+            .get(entry)
+            .and_then(|u| u.root_expr())
+            .is_some_and(|e| matches!(e.kind, ExprKind::Arrow { .. }))
+    }
+
     /// エントリファイルの `export default` を評価して要素ツリーにする。
-    pub(crate) fn document(&mut self, entry: usize) -> R<Arc<Node>> {
+    /// 関数の形のルートは `env` を引数にして呼ぶ（DECISIONS U1）。静的な形では `env` は使わない。
+    ///
+    /// 誤りは複数返りうる（見つかった `key` の重複はすべて。ほかの誤りは最初の 1 つで打ち切る。D9）。
+    pub(crate) fn document(
+        &mut self,
+        entry: usize,
+        env: Option<Value>,
+    ) -> Result<Arc<Node>, Vec<EvalError>> {
+        let result = self.document_inner(entry, env);
+        let mut errors = std::mem::take(&mut self.key_errors);
+        match result {
+            Ok(el) if errors.is_empty() => Ok(el),
+            Ok(_) => Err(errors),
+            Err(e) => {
+                errors.push(e);
+                Err(errors)
+            }
+        }
+    }
+
+    fn document_inner(&mut self, entry: usize, env: Option<Value>) -> R<Arc<Node>> {
         self.current = entry;
-        let root = self.units.get(entry).and_then(|u| {
-            u.module.items.iter().find_map(|i| match &i.kind {
-                ItemKind::ExportDefault(e) => Some(e),
-                _ => None,
-            })
-        });
+        let root = self.units.get(entry).and_then(|u| u.root_expr());
         let Some(root) = root else {
             return Err(fill(
                 at(
@@ -311,6 +361,12 @@ impl<'a> Evaluator<'a> {
         let v = self
             .expr(root, &scope)
             .map_err(|e| fill(e, root.span, entry))?;
+        let v = match (v, env) {
+            (Value::Function(f), Some(env)) => self
+                .call_value(&f, vec![env], root.span)
+                .map_err(|e| fill(e, root.span, entry))?,
+            (v, _) => v,
+        };
         let Value::Element(el) = v else {
             return Err(fill(
                 internal(root.span, "ルートが要素でない"),
@@ -556,12 +612,12 @@ impl<'a> Evaluator<'a> {
                 match (op, a) {
                     (LogicalOp::And, Value::Bool(false)) => Ok(Value::Bool(false)),
                     (LogicalOp::Or, Value::Bool(true)) => Ok(Value::Bool(true)),
-                    (LogicalOp::And | LogicalOp::Or, Value::Bool(_)) => {
-                        match self.expr(rhs, scope)? {
-                            b @ Value::Bool(_) => Ok(b),
-                            _ => Err(internal(rhs.span, "論理演算子のオペランド")),
-                        }
-                    }
+                    // `&&` の右辺は boolean とは限らない（式の型は `false | B`。DECISIONS R2）。
+                    (LogicalOp::And, Value::Bool(true)) => self.expr(rhs, scope),
+                    (LogicalOp::Or, Value::Bool(false)) => match self.expr(rhs, scope)? {
+                        b @ Value::Bool(_) => Ok(b),
+                        _ => Err(internal(rhs.span, "論理演算子のオペランド")),
+                    },
                     (LogicalOp::Coalesce, Value::Undefined) => self.expr(rhs, scope),
                     (LogicalOp::Coalesce, v) => Ok(v),
                     _ => Err(internal(span, "論理演算子のオペランド")),
@@ -619,7 +675,7 @@ impl<'a> Evaluator<'a> {
             ExprKind::Fragment(children) => {
                 let mut out = Vec::new();
                 self.children(children, scope, &mut out)?;
-                self.bounded(Value::array(out.into_iter().map(Value::Element).collect()))
+                self.bounded(Value::array(out.into_iter().map(child_value).collect()))
             }
         }
     }
@@ -714,28 +770,20 @@ impl<'a> Evaluator<'a> {
                     .and_then(|u| u.functions.get(name))
                     .copied()
                     .ok_or_else(|| internal(span, "関数がない"))?;
-                let vars = decl
-                    .params
-                    .iter()
-                    .map(|p| p.name.name.clone())
-                    .zip(args)
-                    .collect();
+                let base = Arc::new(Scope::default());
+                let vars = self.bind_args(&decl.params, args, &base)?;
                 let scope = Arc::new(Scope { vars, parent: None });
                 self.block(&decl.body, &scope)
             }
             FnRepr::Closure { arrow, env, .. } => {
                 let Some(ExprKind::Arrow { params, body, .. }) = self
                     .unit()
-                    .and_then(|u| u.arrows.get(*arrow))
+                    .and_then(|u| u.arrows.get(*arrow).copied())
                     .map(|e| &e.kind)
                 else {
                     return Err(internal(span, "アロー関数がない"));
                 };
-                let vars = params
-                    .iter()
-                    .map(|p| p.name.name.clone())
-                    .zip(args)
-                    .collect();
+                let vars = self.bind_args(params, args, env)?;
                 let scope = Arc::new(Scope {
                     vars,
                     parent: Some(Arc::clone(env)),
@@ -756,6 +804,39 @@ impl<'a> Evaluator<'a> {
             }
             e
         })
+    }
+
+    /// 引数を束縛する。オブジェクトパターンは、props の値が `undefined` のときだけ既定値を評価する
+    /// （呼び出しごとに評価し、ステップを使う。既定値は、この関数の引数が見えない `base` で評価する。
+    /// DECISIONS R4）。
+    fn bind_args(
+        &mut self,
+        params: &'a [Param],
+        args: Vec<Value>,
+        base: &Arc<Scope>,
+    ) -> R<BTreeMap<String, Value>> {
+        let mut vars = BTreeMap::new();
+        for (p, arg) in params.iter().zip(args) {
+            match &p.pattern {
+                ParamPattern::Ident(id) => {
+                    vars.insert(id.name.clone(), arg);
+                }
+                ParamPattern::Object(props, pspan) => {
+                    let Value::Object(map) = arg else {
+                        return Err(internal(*pspan, "分割代入する引数がオブジェクトでない"));
+                    };
+                    for pp in props {
+                        let given = map.get(&pp.name.name).cloned().unwrap_or(Value::Undefined);
+                        let v = match (&given, &pp.default) {
+                            (Value::Undefined, Some(d)) => self.expr(d, base)?,
+                            _ => given,
+                        };
+                        vars.insert(pp.name.name.clone(), v);
+                    }
+                }
+            }
+        }
+        Ok(vars)
     }
 
     fn method(&mut self, name: &str, xs: &[Value], args: Vec<Value>, span: Span) -> R<Value> {
@@ -881,11 +962,31 @@ impl<'a> Evaluator<'a> {
 
     // ---- JSX -----------------------------------------------------------------
 
-    fn props(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<BTreeMap<String, Value>> {
+    /// props と `key`（props ではない。DECISIONS R3）を評価する。
+    fn props(
+        &mut self,
+        el: &'a Element,
+        scope: &Arc<Scope>,
+    ) -> R<(BTreeMap<String, Value>, Option<String>)> {
         let mut map = BTreeMap::new();
+        let mut key = None;
         for a in &el.attrs {
             match a {
-                Attr::Named { name, value, .. } => {
+                Attr::Named { name, value, span } => {
+                    if name.name == "key" {
+                        let k = match value {
+                            Some(AttrValue::String(s)) => s.value.clone(),
+                            Some(AttrValue::Expr(x)) => match self.expr(x, scope)? {
+                                Value::String(s) => s.to_string(),
+                                _ => return Err(internal(*span, "key が string でない")),
+                            },
+                            None => return Err(internal(*span, "値のない key")),
+                        };
+                        // 文字列を作るので、長さとステップの上限に数える。
+                        self.string(k.clone())?;
+                        key = Some(k);
+                        continue;
+                    }
                     let v = match value {
                         None => Value::Bool(true),
                         Some(AttrValue::String(s)) => self.string(s.value.clone())?,
@@ -902,7 +1003,7 @@ impl<'a> Evaluator<'a> {
                 },
             }
         }
-        Ok(map)
+        Ok((map, key))
     }
 
     fn element(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<Arc<Node>> {
@@ -913,7 +1014,7 @@ impl<'a> Evaluator<'a> {
     }
 
     fn element_inner(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<Arc<Node>> {
-        let mut props = self.props(el, scope)?;
+        let (mut props, key) = self.props(el, scope)?;
         let mut children = Vec::new();
         self.children(&el.children, scope, &mut children)?;
         let name = &el.name.name;
@@ -922,7 +1023,7 @@ impl<'a> Evaluator<'a> {
             if !el.children.is_empty() {
                 props.insert(
                     "children".to_owned(),
-                    Value::array(children.into_iter().map(Value::Element).collect()),
+                    Value::array(children.into_iter().map(child_value).collect()),
                 );
             }
             let v = self.call_value(&f, vec![Value::Object(Arc::new(props))], el.span)?;
@@ -931,12 +1032,16 @@ impl<'a> Evaluator<'a> {
             };
             let mut node = (*node).clone();
             node.expanded_from.push(self.file_span(el.span));
+            // 呼び出し側の key が、展開後のルート要素の key になる（付けなければ key なし。DECISIONS R3）。
+            node.key = key;
             return Ok(Arc::new(node));
         }
         self.check_unique(name, &children)?;
+        self.check_keys(&children);
         let node = Arc::new(Node {
             name: name.clone(),
             props,
+            key,
             children,
             span: self.file_span(el.span),
             expanded_from: Vec::new(),
@@ -946,12 +1051,12 @@ impl<'a> Evaluator<'a> {
     }
 
     /// 一意な子の重複（評価後の検査。DECISIONS E2）。
-    fn check_unique(&self, name: &str, children: &[Arc<Node>]) -> R<()> {
+    fn check_unique(&self, name: &str, children: &[ChildNode]) -> R<()> {
         let Some(component) = self.schema.component(name) else {
             return Ok(());
         };
         let mut seen: BTreeMap<&str, ()> = BTreeMap::new();
-        for c in children {
+        for c in children.iter().filter_map(ChildNode::as_element) {
             if component.unique().contains(&c.name) && seen.insert(&c.name, ()).is_some() {
                 // 子を作ったファイルの位置で報告する。
                 let span = Span {
@@ -970,16 +1075,48 @@ impl<'a> Evaluator<'a> {
         Ok(())
     }
 
-    /// 子を平らにする。`undefined` は除く（DECISIONS B6）。
+    /// 同じ親の子（フラグメントと配列の展開後）の `key` の重複（評価後の検査。DECISIONS R3）。
+    fn check_keys(&mut self, children: &[ChildNode]) {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        let mut errors = Vec::new();
+        for c in children.iter().filter_map(ChildNode::as_element) {
+            let Some(key) = &c.key else {
+                continue;
+            };
+            if !seen.insert(key.as_str()) {
+                // 子を作ったファイルの位置で報告する。
+                let span = Span {
+                    start: c.span.start,
+                    end: c.span.end,
+                };
+                let mut e = at(
+                    Code::DuplicateChildKey,
+                    span,
+                    format!("同じ親の子に、同じ key `{key}` がある"),
+                );
+                e.unit = self.units.iter().position(|u| u.module.file == c.span.file);
+                errors.push(e);
+            }
+        }
+        self.key_errors.extend(errors);
+    }
+
+    /// 子を平らにする。`false` と `undefined` は取り除く（DECISIONS B6・R2）。
     fn children(
         &mut self,
         children: &'a [Child],
         scope: &Arc<Scope>,
-        out: &mut Vec<Arc<Node>>,
+        out: &mut Vec<ChildNode>,
     ) -> R<()> {
         for c in children {
             match c {
-                Child::Element(el, _) => out.push(self.element(el, scope)?),
+                Child::Element(el, _) => out.push(ChildNode::Element(self.element(el, scope)?)),
+                Child::Text(t, _) => {
+                    let Value::String(s) = self.string(t.clone())? else {
+                        return Err(internal(Span::default(), "文字列が作れない"));
+                    };
+                    out.push(ChildNode::Text(s));
+                }
                 Child::Fragment(cs, _) => self.children(cs, scope, out)?,
                 Child::Expr(x, span) => {
                     let v = self.expr(x, scope)?;
@@ -993,17 +1130,27 @@ impl<'a> Evaluator<'a> {
 }
 
 /// 子の値を平らにする。配列が深く入れ子になってもスタックを使い切らないよう、明示のスタックを使う。
-fn flatten(v: Value, out: &mut Vec<Arc<Node>>, span: Span) -> R<()> {
+fn flatten(v: Value, out: &mut Vec<ChildNode>, span: Span) -> R<()> {
     let mut stack = vec![v];
     while let Some(v) = stack.pop() {
         match v {
-            Value::Element(e) => out.push(e),
-            Value::Undefined => {}
+            Value::Element(e) => out.push(ChildNode::Element(e)),
+            Value::String(s) => out.push(ChildNode::Text(s)),
+            // `c && <A />` の `false` と `undefined` は、どの子の位置でも取り除く（DECISIONS R2）。
+            Value::Undefined | Value::Bool(false) => {}
             Value::Array(xs) => stack.extend(xs.iter().rev().cloned()),
             _ => return Err(internal(span, "子に置けない値")),
         }
     }
     Ok(())
+}
+
+/// 子ノードを、`children` 配列の値にする。
+fn child_value(c: ChildNode) -> Value {
+    match c {
+        ChildNode::Element(e) => Value::Element(e),
+        ChildNode::Text(t) => Value::String(t),
+    }
 }
 
 /// 位置のない誤り（上限の超過）に、宣言の位置を付ける（DECISIONS D8）。

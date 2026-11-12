@@ -1,0 +1,12 @@
+// §5 JSX: テキスト子 `<Label>text</Label>` は、子に string を受け付けるコンポーネントで書ける（DECISIONS R1）。
+// 評価結果の子は、要素かテキスト（string）。`{"text"}` も同じ。
+"use cdl 1";
+import { Contrast, Keybind, Label } from "host:contrast";
+
+export default (
+  <Contrast>
+    <Keybind keys="a" action="b" />
+    <Label>hello</Label>
+    <Label>{"from expression"}</Label>
+  </Contrast>
+);

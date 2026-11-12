@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E4012",
+      "severity": "error",
+      "span": {
+        "file": "6/root-function-signature.cdl",
+        "start": 185,
+        "end": 259
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+// §5 JSX: `true` は子に置けない（`false` と `undefined` だけ置ける。DECISIONS R2）。E4005。
+"use cdl 1";
+import { Contrast } from "host:contrast";
+
+const t: boolean = true;
+
+export default (
+  <Contrast>
+    {true}
+    {t}
+  </Contrast>
+);

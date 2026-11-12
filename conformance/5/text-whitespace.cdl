@@ -1,0 +1,26 @@
+// §5 JSX: テキスト子の空白の規則（DECISIONS U5）。JSX の標準（Babel / TypeScript）と同じ: 行に分け、各行の前後の空白を除き
+// （最初の行の先頭と最後の行の末尾は残す）、空行を捨て、残りを 1 つの空白でつなぐ。単一行の前後の空白は残る。
+// 標準と違い、空白だけのテキストは常に捨てる。`{"…"}` は加工しない。
+"use cdl 1";
+import { Contrast, Label } from "host:contrast";
+
+export default (
+  <Contrast>
+    <Label>   one   two   </Label>
+    <Label> hi </Label>
+    <Label>  head
+      tail  </Label>
+    <Label>
+      first line
+        second line
+
+      third line
+    </Label>
+    <Label>{"  as is  "}</Label>
+    <Label>a{" "}b</Label>
+    <Label> </Label>
+    <Label>
+    </Label>
+    <Label>comma, (paren) 'quote' "double" \ backslash</Label>
+  </Contrast>
+);

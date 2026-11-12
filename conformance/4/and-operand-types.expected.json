@@ -1,0 +1,49 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3006",
+      "severity": "error",
+      "span": {
+        "file": "4/and-operand-types.cdl",
+        "start": 380,
+        "end": 416
+      }
+    },
+    {
+      "code": "E3006",
+      "severity": "error",
+      "span": {
+        "file": "4/and-operand-types.cdl",
+        "start": 423,
+        "end": 459
+      }
+    },
+    {
+      "code": "E3006",
+      "severity": "error",
+      "span": {
+        "file": "4/and-operand-types.cdl",
+        "start": 466,
+        "end": 506
+      }
+    },
+    {
+      "code": "E3006",
+      "severity": "error",
+      "span": {
+        "file": "4/and-operand-types.cdl",
+        "start": 513,
+        "end": 522
+      }
+    },
+    {
+      "code": "E3006",
+      "severity": "error",
+      "span": {
+        "file": "4/and-operand-types.cdl",
+        "start": 529,
+        "end": 568
+      }
+    }
+  ]
+}

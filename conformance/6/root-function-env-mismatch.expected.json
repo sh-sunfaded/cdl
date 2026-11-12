@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E4014",
+      "severity": "error",
+      "span": {
+        "file": "6/root-function-env-mismatch.cdl",
+        "start": 243,
+        "end": 311
+      }
+    }
+  ]
+}

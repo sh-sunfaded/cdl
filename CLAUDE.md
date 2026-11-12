@@ -79,7 +79,7 @@ WITH_KANI=1 scripts/check-all.sh  # Kani も含める（時間がかかる）
 ### conformance の置き方（スクリプトの前提）
 
 - `conformance/<節>/<名前>.cdl` と、同じ名前の `<名前>.expected.json`（値木 or 診断）を並べる。
-- 禁止構文は `conformance/forbidden/<id>.cdl`。`<id>` は `let var class new this null for while try async enum as hooks event-handler ref destructuring rest-param text-child and-render`。
+- 禁止構文は `conformance/forbidden/<id>.cdl`。`<id>` は `let var class new this null for while try async enum as hooks event-handler ref destructuring rest-param and-nonboolean`。
 - cdl-cli は `cdl check|eval --json <file>` を持つ。`cdl check` は `--stage <syntax|sema|eval>` と、`--preset contrast`（examples のスキーマ）も受け付ける。
 
 ## 進め方

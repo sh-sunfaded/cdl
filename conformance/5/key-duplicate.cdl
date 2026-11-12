@@ -1,0 +1,16 @@
+// §6 key: 同じ親の子（フラグメント展開後）で、文字列リテラルの key が重複したら、評価の前（check）に E4011 を、すべて報告する（DECISIONS U3）。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+export default (
+  <Contrast>
+    <Keybind key="1" keys="a" action="x" />
+    <>
+      <Keybind key="1" keys="b" action="y" />
+      <Keybind key={"2"} keys="c" action="z" />
+    </>
+    <Keybind key="2" keys="d" action="w" />
+    <Keybind key="1" keys="e" action="v" />
+    <Keybind key="other" keys="f" action="u" />
+  </Contrast>
+);

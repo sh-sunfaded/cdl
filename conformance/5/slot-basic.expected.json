@@ -1,0 +1,28 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Group",
+        "props": {
+          "header": {
+            "element": "Label",
+            "props": {},
+            "children": ["Title"]
+          },
+          "footer": [
+            { "element": "Label", "props": {}, "children": ["a"] },
+            { "element": "Label", "props": {}, "children": ["b"] }
+          ]
+        },
+        "children": [
+          "intro",
+          { "element": "Keybind", "props": { "keys": "a", "action": "b" }, "children": [] },
+          "outro"
+        ]
+      },
+      { "element": "Group", "props": {}, "children": [] }
+    ]
+  }
+}

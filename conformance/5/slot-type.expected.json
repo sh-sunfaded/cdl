@@ -1,0 +1,58 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3016",
+      "severity": "error",
+      "span": {
+        "file": "5/slot-type.cdl",
+        "start": 465,
+        "end": 496
+      }
+    },
+    {
+      "code": "E3016",
+      "severity": "error",
+      "span": {
+        "file": "5/slot-type.cdl",
+        "start": 540,
+        "end": 571
+      }
+    },
+    {
+      "code": "E4004",
+      "severity": "error",
+      "span": {
+        "file": "5/slot-type.cdl",
+        "start": 596,
+        "end": 597
+      }
+    },
+    {
+      "code": "E3016",
+      "severity": "error",
+      "span": {
+        "file": "5/slot-type.cdl",
+        "start": 618,
+        "end": 649
+      }
+    },
+    {
+      "code": "E3016",
+      "severity": "error",
+      "span": {
+        "file": "5/slot-type.cdl",
+        "start": 695,
+        "end": 704
+      }
+    },
+    {
+      "code": "E3001",
+      "severity": "error",
+      "span": {
+        "file": "5/slot-type.cdl",
+        "start": 726,
+        "end": 727
+      }
+    }
+  ]
+}

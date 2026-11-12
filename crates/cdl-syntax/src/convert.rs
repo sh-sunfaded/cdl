@@ -85,9 +85,41 @@ fn is_event_attr(name: &str) -> bool {
         .is_some_and(|b| b.is_ascii_uppercase())
 }
 
-/// JSX の子のテキストとして無視する空白。
-fn is_jsx_whitespace(text: &str) -> bool {
-    text.chars().all(|c| matches!(c, ' ' | '\t' | '\n' | '\r'))
+fn is_jsx_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\r')
+}
+
+/// テキスト子の空白の規則（DECISIONS U5。JSX の標準＝Babel / TypeScript と同じ。ただし空白だけのテキストは常に捨てる）:
+/// 行に分け、各行の前後の空白を除く（最初の行の先頭と最後の行の末尾の空白は残す）、空行を捨て、
+/// 残りを 1 つの空白でつなぐ。単一行のテキストの前後の空白は残る。空白だけのテキストは `None`（子にしない）。
+pub(crate) fn normalize_jsx_text(raw: &str) -> Option<String> {
+    if raw.chars().all(|c| is_jsx_space(c) || c == '\n') {
+        return None;
+    }
+    let all: Vec<&str> = raw.split('\n').collect();
+    let last = all.len().saturating_sub(1);
+    let lines: Vec<&str> = all
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let line = if i == 0 {
+                line
+            } else {
+                line.trim_start_matches(is_jsx_space)
+            };
+            if i == last {
+                line
+            } else {
+                line.trim_end_matches(is_jsx_space)
+            }
+        })
+        .filter(|l| !l.is_empty())
+        .collect();
+    Some(lines.join(" "))
+}
+
+fn to_usize(n: u32) -> usize {
+    usize::try_from(n).unwrap_or(usize::MAX)
 }
 
 fn sp(span: oxc_span::Span) -> Span {
@@ -335,8 +367,26 @@ impl<'s> Converter<'s> {
                 });
             }
             o::Statement::ExportDefaultDeclaration(d) => {
+                if let o::ExportDefaultDeclarationKind::FunctionDeclaration(f) = &d.declaration {
+                    // `export default function App(…): R { … }` は、名前を持たないアロー関数と同じ
+                    // （ルート関数。DECISIONS U1）。名前は束縛しない。
+                    let (_, params, ret, body) = self.function_parts(f, false)?;
+                    let expr = Expr {
+                        kind: ExprKind::Arrow {
+                            params,
+                            ret,
+                            body: ArrowBody::Block(body),
+                        },
+                        span: sp(f.span),
+                    };
+                    return Some(Item {
+                        exported: true,
+                        kind: ItemKind::ExportDefault(expr),
+                        span,
+                    });
+                }
                 let Some(expr) = d.declaration.as_expression() else {
-                    return self.unsupported(span, "`export default` に宣言を置くこと");
+                    return self.unsupported(span, "`export default` に、関数以外の宣言を置くこと");
                 };
                 self.semicolon(d.span);
                 return Some(Item {
@@ -626,6 +676,24 @@ impl<'s> Converter<'s> {
 
     fn function(&mut self, f: &o::Function<'_>) -> Option<FunctionDecl> {
         let span = sp(f.span);
+        let (name, params, ret, body) = self.function_parts(f, true)?;
+        Some(FunctionDecl {
+            name: name?,
+            params,
+            ret,
+            body,
+            span,
+        })
+    }
+
+    /// 関数の名前・引数・戻り値の型・本体。`name_required` が偽なら、名前がなくてもよい。
+    #[allow(clippy::type_complexity)]
+    fn function_parts(
+        &mut self,
+        f: &o::Function<'_>,
+        name_required: bool,
+    ) -> Option<(Option<Ident>, Vec<Param>, Option<Type>, Block)> {
+        let span = sp(f.span);
         if f.r#type != o::FunctionType::FunctionDeclaration || f.declare {
             return self.unsupported(span, "本体のない関数宣言（`declare`）");
         }
@@ -642,8 +710,13 @@ impl<'s> Converter<'s> {
             return self.reserved(span, "this");
         }
         let name = match &f.id {
-            Some(id) => self.binding(id.name.as_str(), id.span),
-            None => self.unsupported(span, "名前のない関数"),
+            Some(id) if name_required => self.binding(id.name.as_str(), id.span),
+            Some(id) => Some(Ident {
+                name: id.name.as_str().to_owned(),
+                span: sp(id.span),
+            }),
+            None if name_required => self.unsupported(span, "名前のない関数"),
+            None => None,
         };
         let params = self.params(&f.params);
         let ret = match &f.return_type {
@@ -657,13 +730,10 @@ impl<'s> Converter<'s> {
             return self.unsupported(sp(d.span), "関数の中のディレクティブ");
         }
         let body = self.block(&body.statements, body.span)?;
-        Some(FunctionDecl {
-            name: name?,
-            params: params?,
-            ret,
-            body,
-            span,
-        })
+        if name_required && name.is_none() {
+            return None;
+        }
+        Some((name, params?, ret, body))
     }
 
     fn params(&mut self, p: &o::FormalParameters<'_>) -> Option<Vec<Param>> {
@@ -692,17 +762,85 @@ impl<'s> Converter<'s> {
         if p.initializer.is_some() {
             return self.unsupported(span, "既定引数");
         }
-        let o::BindingPattern::BindingIdentifier(id) = &p.pattern else {
-            return self.unsupported_help(span, "引数の分割代入", "`props.x` のように参照する");
+        let pattern = match &p.pattern {
+            o::BindingPattern::BindingIdentifier(id) => {
+                ParamPattern::Ident(self.binding(id.name.as_str(), id.span)?)
+            }
+            o::BindingPattern::ObjectPattern(obj) => self.object_pattern(obj)?,
+            _ => {
+                return self.unsupported_help(
+                    span,
+                    "この形の引数パターン",
+                    "引数は名前か、1 階層のオブジェクトパターン `{ a, b = 既定値 }: P`",
+                );
+            }
         };
-        let name = self.binding(id.name.as_str(), id.span);
         let ty = match &p.type_annotation {
             Some(t) => Some(self.ty(&t.type_annotation)?),
             None => None,
         };
-        Some(Param {
+        Some(Param { pattern, ty, span })
+    }
+
+    /// 引数のオブジェクトパターン `{ a, b = expr }`。別名・入れ子・rest・計算キーは書けない（DECISIONS R4）。
+    fn object_pattern(&mut self, obj: &o::ObjectPattern<'_>) -> Option<ParamPattern> {
+        let span = sp(obj.span);
+        if let Some(rest) = &obj.rest {
+            return self.unsupported_help(
+                sp(rest.span),
+                "分割代入の rest（`...`）",
+                "取り出す名前を 1 つずつ書く",
+            );
+        }
+        let mut props = Vec::new();
+        let mut ok = true;
+        for bp in &obj.properties {
+            match self.pattern_prop(bp) {
+                Some(p) => props.push(p),
+                None => ok = false,
+            }
+        }
+        ok.then_some(ParamPattern::Object(props, span))
+    }
+
+    fn pattern_prop(&mut self, bp: &o::BindingProperty<'_>) -> Option<PatternProp> {
+        let span = sp(bp.span);
+        if bp.computed || !bp.shorthand {
+            return self.unsupported_help(
+                span,
+                "分割代入の別名・計算キー",
+                "props の名前をそのまま使う（`{ a }`）。別名が要るなら `props.a` と参照する",
+            );
+        }
+        // 省略形 `{ a }` か `{ a = expr }` だけが残る。
+        let (id, default) = match &bp.value {
+            o::BindingPattern::BindingIdentifier(id) => (id, None),
+            o::BindingPattern::AssignmentPattern(ap) => match &ap.left {
+                o::BindingPattern::BindingIdentifier(id) => (id, Some(&ap.right)),
+                _ => {
+                    return self.unsupported_help(
+                        span,
+                        "入れ子の分割代入",
+                        "1 階層だけ書ける。深い値は `a.b` と参照する",
+                    );
+                }
+            },
+            _ => {
+                return self.unsupported_help(
+                    span,
+                    "入れ子の分割代入",
+                    "1 階層だけ書ける。深い値は `a.b` と参照する",
+                );
+            }
+        };
+        let name = self.binding(id.name.as_str(), id.span);
+        let default = match default {
+            Some(e) => Some(self.expr(e)?),
+            None => None,
+        };
+        Some(PatternProp {
             name: name?,
-            ty,
+            default,
             span,
         })
     }
@@ -990,8 +1128,11 @@ impl<'s> Converter<'s> {
                 let params = self.params(&f.params)?;
                 let mut typed = Vec::new();
                 for p in params {
+                    let ParamPattern::Ident(name) = p.pattern else {
+                        return self.unsupported(p.span, "関数型の分割代入の引数");
+                    };
                     match p.ty {
-                        Some(t) => typed.push((p.name, t)),
+                        Some(t) => typed.push((name, t)),
                         None => return self.unsupported(p.span, "関数型の、型注釈のない引数"),
                     }
                 }
@@ -1439,7 +1580,7 @@ impl<'s> Converter<'s> {
         };
         let name = id.name.as_str();
         let span = sp(id.span);
-        if name == "ref" || name == "key" {
+        if name == "ref" {
             return self.err(
                 Code::ReactFeature,
                 span,
@@ -1484,16 +1625,32 @@ impl<'s> Converter<'s> {
         for child in children {
             let converted = match child {
                 o::JSXChild::Text(t) => {
-                    if is_jsx_whitespace(t.value.as_str()) {
+                    let span = sp(t.span);
+                    let raw = self.src.get(to_usize(span.start)..to_usize(span.end));
+                    let Some(raw) = raw else {
+                        ok = false;
+                        continue;
+                    };
+                    // 文字参照（`&amp;` など）は扱わない（DECISIONS R1）。
+                    if let Some(at) = raw.find('&') {
+                        let start = span.start.saturating_add(u32::try_from(at).unwrap_or(0));
+                        self.diag_help(
+                            Code::JsxTextCharRef,
+                            Span {
+                                start,
+                                end: start.saturating_add(1),
+                            },
+                            "JSX のテキスト子に `&` は書けない（文字参照は使えない）",
+                            "`&` を含む文字列は `{\"a & b\"}` と書く",
+                        );
+                        ok = false;
                         continue;
                     }
-                    self.diag_help(
-                        Code::JsxTextChild,
-                        sp(t.span),
-                        "JSX のテキスト子は書けない",
-                        "文字列は `{\"…\"}` と書く",
-                    );
-                    None
+                    match normalize_jsx_text(raw) {
+                        Some(text) => Some(Child::Text(text, span)),
+                        // 空白だけのテキストは捨てる。
+                        None => continue,
+                    }
                 }
                 o::JSXChild::Element(e) => self.element(e).map(|el| Child::Element(el, sp(e.span))),
                 o::JSXChild::Fragment(f) => self

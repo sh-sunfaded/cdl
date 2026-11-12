@@ -82,7 +82,7 @@ fn value_of(t: &GenTy, expr: &str, limits: &Limits) -> Option<Result<Value, Code
     let checked = cdl_eval::sema::check(&module, &schema).ok()?;
     let ev = match evaluate(&[unit(&module, &checked)], 0, &schema, limits) {
         Ok(ev) => ev,
-        Err(d) => return Some(Err(d.code)),
+        Err(d) => return Some(Err(d[0].code)),
     };
     let r = cdl_eval::call_hook(
         &[unit(&module, &checked)],

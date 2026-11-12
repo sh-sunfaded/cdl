@@ -1,0 +1,14 @@
+// §6 key: `key` の値は string か number。それ以外は E3001（DECISIONS R3）。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+const maybe: string | undefined = undefined;
+
+export default (
+  <Contrast>
+    <Keybind key={true} keys="a" action="b" />
+    <Keybind key={maybe} keys="a" action="b" />
+    <Keybind key keys="a" action="b" />
+    <Keybind key={[1]} keys="a" action="b" />
+  </Contrast>
+);

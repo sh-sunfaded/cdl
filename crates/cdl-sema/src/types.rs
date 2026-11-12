@@ -194,7 +194,25 @@ impl Ty {
     pub fn widen(&self) -> Ty {
         match self {
             Ty::Literal(l) => l.base(),
-            Ty::Union(ms) => Ty::union(ms.iter().map(Ty::widen).collect()),
+            Ty::Union(ms) => {
+                // `false | B`（`c && B` の型）の `false` は広げない。広げると `boolean | B` になり、
+                // 子に置けなくなる（DECISIONS R2）。
+                let false_or_b = ms.contains(&Ty::Literal(Literal::Bool(false)))
+                    && ms
+                        .iter()
+                        .any(|m| !matches!(m, Ty::Literal(_) | Ty::Undefined));
+                Ty::union(
+                    ms.iter()
+                        .map(|m| {
+                            if false_or_b && *m == Ty::Literal(Literal::Bool(false)) {
+                                m.clone()
+                            } else {
+                                m.widen()
+                            }
+                        })
+                        .collect(),
+                )
+            }
             Ty::Array(t) => Ty::Array(Box::new(t.widen())),
             Ty::Tuple(ts) => Ty::Array(Box::new(Ty::union(ts.iter().map(Ty::widen).collect()))),
             Ty::Object(fields) => Ty::Object(
@@ -221,7 +239,23 @@ impl Ty {
             return true;
         };
         let others: Vec<&Ty> = ms.iter().filter(|m| **m != Ty::Undefined).collect();
-        others.len() <= 1 || others.iter().all(|m| matches!(m, Ty::Literal(_)))
+        if others.len() <= 1 || others.iter().all(|m| matches!(m, Ty::Literal(_))) {
+            return true;
+        }
+        // `c && B` の型 `false | B`（B は 1 つの型。DECISIONS R2）。
+        let is_false = |m: &&&Ty| ***m == Ty::Literal(Literal::Bool(false));
+        if others.iter().any(|m| is_false(&m))
+            && others.iter().filter(|m| !is_false(m)).count() <= 1
+        {
+            return true;
+        }
+        // 子の型 `Element<A> | string`（要素とテキストの混在。DECISIONS U2）。
+        others.iter().filter(|m| !is_false(m)).all(|m| {
+            matches!(
+                m,
+                Ty::Element(_) | Ty::String | Ty::Literal(Literal::String(_))
+            )
+        })
     }
 
     /// `===` で比べられる型か（DECISIONS B13）。

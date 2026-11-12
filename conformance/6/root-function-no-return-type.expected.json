@@ -1,0 +1,13 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3007",
+      "severity": "error",
+      "span": {
+        "file": "6/root-function-no-return-type.cdl",
+        "start": 194,
+        "end": 220
+      }
+    }
+  ]
+}

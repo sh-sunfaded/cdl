@@ -297,7 +297,7 @@ fn unsupported_syntax_is_reported() {
         "interface I { a }",
         "export { a };",
         "export * from \"x\";",
-        "export default function f(): number { return 1; }",
+        "export default class {}",
         "import X from \"x\";",
         "import * as X from \"x\";",
         "import \"x\";",
@@ -328,12 +328,19 @@ fn unsupported_syntax_is_reported() {
 
 #[test]
 fn react_features_are_reported() {
+    // `ref`・イベントハンドラ属性・Hooks は E1007。`key` は許可（DECISIONS R3）。
     let src = file(
         "const useThing = 1;\nconst a = useState(0);\nconst b = <A ref={r} key=\"k\" onClick={f} />;\n",
     );
-    assert_eq!(codes(&src), [Code::ReactFeature; 5]);
+    assert_eq!(codes(&src), [Code::ReactFeature; 4]);
     // `use` のあとが小文字なら Hooks の名前ではない。
     assert!(codes(&file("const user = 1;\nconst a = <A once={x} />;\n")).is_empty());
+    assert!(
+        codes(&file(
+            "const a = <A key=\"k\" />;\nconst b = <A key={k} />;\n"
+        ))
+        .is_empty()
+    );
 }
 
 #[test]
@@ -342,11 +349,162 @@ fn jsx_rules() {
         codes(&file("const a = <div />;\n")),
         [Code::LowercaseJsxTag]
     );
-    assert_eq!(
-        codes(&file("const a = <A>text</A>;\n")),
-        [Code::JsxTextChild]
-    );
+    // テキスト子は許可（意味解析が、受け付けるコンポーネントかを検査する。DECISIONS R1）。
+    assert_eq!(codes(&file("const a = <A>text</A>;\n")), []);
     assert_eq!(codes(&file("const a = <>{\"x\"}{y}</>;\n")), []);
+}
+
+/// 式 `const a = <A>…</A>;` の子を取り出す。
+fn children_of(src: &str) -> Vec<Child> {
+    let m = ok(&file(src));
+    let ItemKind::Const(c) = &m.items[0].kind else {
+        panic!()
+    };
+    let ExprKind::Element(el) = &c.init.kind else {
+        panic!()
+    };
+    el.children.clone()
+}
+
+fn texts(children: &[Child]) -> Vec<String> {
+    children
+        .iter()
+        .filter_map(|c| match c {
+            Child::Text(t, _) => Some(t.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// テキスト子の空白の規則（DECISIONS R1）: 各行の前後の空白を除き、空行を捨て、1 つの空白でつなぐ。
+#[test]
+fn text_children_are_normalized() {
+    let t = |src: &str| texts(&children_of(src));
+    assert_eq!(t("const a = <A>hello</A>;\n"), ["hello"]);
+    // JSX の標準: 単一行のテキストの前後の空白は残る（DECISIONS U5）。
+    assert_eq!(t("const a = <A>  a   b  </A>;\n"), ["  a   b  "]);
+    assert_eq!(t("const a = <A> hi </A>;\n"), [" hi "]);
+    // 複数行: 最初の行の先頭と最後の行の末尾は残り、行の境目の空白は除かれる。
+    assert_eq!(t("const a = <A>  x  \n  y  </A>;\n"), ["  x y  "]);
+    assert_eq!(t("const a = <A>x \n\n \t y</A>;\n"), ["x y"]);
+    assert_eq!(
+        t("const a = <A>\n  one\n\n    two  \n  </A>;\n"),
+        ["one two"]
+    );
+    // 空白だけのテキストは、常に捨てる（標準と違う点）。
+    assert_eq!(t("const a = <A> </A>;\n"), Vec::<String>::new());
+    assert_eq!(t("const a = <A><B /> <B /></A>;\n"), Vec::<String>::new());
+    assert_eq!(
+        t("const a = <A>\n  <B />\n  <B />\n</A>;\n"),
+        Vec::<String>::new()
+    );
+    // 要素や `{…}` をはさむと、別々のテキストになる。
+    assert_eq!(t("const a = <A>x<B />y{z}w</A>;\n"), ["x", "y", "w"]);
+    // 記号・引用符・`\` はそのまま。
+    assert_eq!(
+        t("const a = <A>a, (b) 'c' \"d\" \\ e</A>;\n"),
+        ["a, (b) 'c' \"d\" \\ e"]
+    );
+    // span は元のテキスト全体。
+    let src = file("const a = <A>\n  hi\n</A>;\n");
+    let Child::Text(_, span) = &children_of("const a = <A>\n  hi\n</A>;\n")[0] else {
+        panic!()
+    };
+    let (start, end) = (
+        usize::try_from(span.start).unwrap(),
+        usize::try_from(span.end).unwrap(),
+    );
+    assert_eq!(&src[start..end], "\n  hi\n");
+}
+
+#[test]
+fn text_children_reject_character_references() {
+    let src = file("const a = <A>x &amp; y</A>;\n");
+    let got = errors(&src);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, Code::JsxTextCharRef);
+    let (start, end) = (
+        usize::try_from(got[0].1).unwrap(),
+        usize::try_from(got[0].2).unwrap(),
+    );
+    assert_eq!(&src[start..end], "&");
+    assert!(helps(&src)[0].is_some());
+    // 式の中の `&` は文字列なので問題ない。
+    assert_eq!(codes(&file("const a = <A>{\"x & y\"}</A>;\n")), []);
+}
+
+#[test]
+fn long_text_does_not_hit_the_nesting_limit() {
+    // 句読点の多い文章でも、構文ネスト深さ（E1008）に当たらない。
+    let words = "a, b; c. ".repeat(100);
+    assert_eq!(codes(&file(&format!("const a = <A>{words}</A>;\n"))), []);
+}
+
+fn first_param(src: &str) -> Param {
+    let m = ok(&file(src));
+    let ItemKind::Function(f) = &m.items[0].kind else {
+        panic!()
+    };
+    f.params[0].clone()
+}
+
+/// 引数の 1 階層のオブジェクトパターン（DECISIONS R4）。
+#[test]
+fn object_pattern_params() {
+    let p = first_param("function f({ a, b = 1 }: P): number { return a; }\n");
+    let ParamPattern::Object(props, _) = &p.pattern else {
+        panic!()
+    };
+    let names: Vec<&str> = props.iter().map(|x| x.name.name.as_str()).collect();
+    assert_eq!(names, ["a", "b"]);
+    assert!(props[0].default.is_none());
+    assert!(matches!(
+        props[1].default.as_ref().map(|d| &d.kind),
+        Some(ExprKind::Number(n)) if *n == 1.0
+    ));
+    assert!(p.ty.is_some());
+    assert_eq!(
+        p.bound_names()
+            .iter()
+            .map(|i| i.name.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+    // アロー関数の引数にも書ける。
+    assert_eq!(codes(&file("const g = ({ a }: P): number => a;\n")), []);
+    // 空のパターンも、構文としては書ける。
+    assert_eq!(
+        codes(&file("function h({}: P): number { return 1; }\n")),
+        []
+    );
+}
+
+#[test]
+fn object_pattern_params_reject_other_shapes() {
+    for body in [
+        "function f({ a: x }: P): number { return x; }",
+        "function f({ a: { b } }: P): number { return b; }",
+        "function f({ ...r }: P): number { return 1; }",
+        "function f({ [k]: x }: P): number { return x; }",
+        "function f([a]: P): number { return a; }",
+        "function f({ a } = o): number { return a; }",
+        "function f({ a: x = 1 }: P): number { return x; }",
+        "function f({ a: { b } = {} }: P): number { return 1; }",
+        "function f(...xs: number[]): number { return 1; }",
+        "const g = ({ a: x }: P): number => x;",
+        "type F = ({ a }: P) => number;",
+    ] {
+        let got = codes(&file(&format!("{body}\n")));
+        assert!(
+            !got.is_empty() && got.iter().all(|c| *c == Code::UnsupportedSyntax),
+            "{body}: {got:?}"
+        );
+    }
+    // `const` への分割代入は、従来どおり書けない。
+    assert_eq!(
+        codes(&file("const { a } = o;\n")),
+        [Code::UnsupportedSyntax]
+    );
 }
 
 #[test]
@@ -627,4 +785,27 @@ fn diagnostics_suggest_alternatives() {
     assert!(got[4].as_deref().unwrap().contains("`satisfies`"));
     assert!(helps("const a = 1;")[0].is_some());
     assert!(helps("\"use cdl 1\"")[0].is_some());
+}
+
+/// ルートの関数の形（DECISIONS U1）。`export default function` はアロー関数と同じ AST になる。
+#[test]
+fn root_function_forms() {
+    for src in [
+        "export default function App({ output }: Env): Element<Root> { return <Root />; }\n",
+        "export default function (env: Env): Element<Root> { return <Root />; }\n",
+        "export default (env: Env): Element<Root> => <Root />;\n",
+        "export default ({ output }: Env): Element<Root> => { return <Root />; };\n",
+    ] {
+        let m = ok(&file(src));
+        let ItemKind::ExportDefault(e) = &m.items[0].kind else {
+            panic!("{src}")
+        };
+        assert!(matches!(e.kind, ExprKind::Arrow { .. }), "{src}");
+    }
+    assert_eq!(
+        codes(&file(
+            "export default async function f(): number { return 1; }\n"
+        )),
+        [Code::ReservedWord]
+    );
 }

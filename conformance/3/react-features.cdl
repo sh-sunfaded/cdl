@@ -1,4 +1,4 @@
-// §3 React: Hooks の名前・ref・key・イベントハンドラ属性は E1007（DECISIONS C4）。
+// §3 React: Hooks の名前・ref・イベントハンドラ属性は E1007（DECISIONS C4）。`key` は許可（DECISIONS R3）。
 "use cdl 1";
 import { Contrast, Keybind } from "host:contrast";
 const useTheme = 1;

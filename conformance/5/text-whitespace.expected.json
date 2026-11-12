@@ -1,0 +1,69 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "   one   two   "
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          " hi "
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "  head tail  "
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "first line second line third line"
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "  as is  "
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "a",
+          " ",
+          "b"
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": []
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": []
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "comma, (paren) 'quote' \"double\" \\ backslash"
+        ]
+      }
+    ]
+  }
+}

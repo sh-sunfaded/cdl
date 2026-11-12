@@ -1,0 +1,24 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Appearance",
+        "props": {
+          "gap": { "length": 16 },
+          "radius": { "length": 8 }
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "output-DP-1",
+          "action": "width 2560"
+        },
+        "children": []
+      }
+    ]
+  }
+}

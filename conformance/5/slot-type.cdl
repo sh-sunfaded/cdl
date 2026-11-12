@@ -1,0 +1,19 @@
+// §6 スロット: 型違いの要素を渡したら E3016（ホストのコンポーネントでも、ユーザー定義でも）。
+// 要素でない値は、従来どおり props の型の誤り（E4004 / E3001）。
+"use cdl 1";
+import { Contrast, Group, Keybind, Label } from "host:contrast";
+
+function Card(props: { head: Element<Label>; rest?: Element<Label>[] }): Element<Label> {
+  return props.head;
+}
+
+export default (
+  <Contrast>
+    <Group header={<Keybind keys="a" action="b" />} />
+    <Group footer={[<Label>ok</Label>, <Keybind keys="a" action="b" />]} />
+    <Group header={1} />
+    <Card head={<Keybind keys="a" action="b" />} />
+    <Card head={<Label>x</Label>} rest={[<Group />]} />
+    <Card head={2} />
+  </Contrast>
+);

@@ -4,8 +4,8 @@ CDL は、Wayland コンポジタ Contrast の設定とポリシーを宣言す�
 
 このリポジトリは Contrast から独立していて、Contrast には外部ライブラリ（`cdl-host`）として組み込まれます。ホストを限定しないので、Contrast 以外にも埋め込めます。
 
-> **状態: プロトタイプとして完成（2026-11-11。edition 1 は不安定で、互換性の約束はまだない）。**
-> 目的は、仕様の主張（決定性・停止性・型安全）が実装で成り立つかを確かめること。最終精査の結果と、確かめていないことは [`docs/AUDIT.md`](docs/AUDIT.md)、Contrast への組み込みを担当する人への引き継ぎは [`docs/HANDOFF.md`](docs/HANDOFF.md) にあります。
+> **状態: v0.1（2026-11-12。edition 1 は不安定で、`0.x` のあいだは互換性を約束しない）。**
+> 実装は、仕様の主張（決定性・停止性・型安全）が成り立つかを確かめるためのプロトタイプ（`oxc_parser` を内部で使う）です。検証の範囲と、確かめていないこと（Kani を v0.1 の変更後に再実行していないことを含む）は「[v0.1 の現状](#v01-の現状)」にあります。最終精査の結果は [`docs/AUDIT.md`](docs/AUDIT.md)、Contrast への組み込みを担当する人への引き継ぎは [`docs/HANDOFF.md`](docs/HANDOFF.md)（どちらも 2026-11-11 時点の記録で、v0.1 の仕様変更は DECISIONS の R1〜R4・U1〜U5 が正）にあります。
 > この README は仕様の要約です。**正典は [`docs/SPEC.md`](docs/SPEC.md)** で、仕様が沈黙している点の決定は [`docs/DECISIONS.md`](docs/DECISIONS.md) にあります。食い違いがあれば、そちらに従ってください。
 
 ## 目次
@@ -26,7 +26,7 @@ CDL は、Wayland コンポジタ Contrast の設定とポリシーを宣言す�
 - [リポジトリ構成](#リポジトリ構成)
 - [検証](#検証)
 - [バージョニング](#バージョニング)
-- [プロトタイプの現状](#プロトタイプの現状)
+- [v0.1 の現状](#v01-の現状)
 
 ## 例
 
@@ -51,7 +51,53 @@ export default (
 );
 ```
 
-複数ファイルとポリシーを含む例は [`examples/contrast/`](examples/contrast/) にあります。
+ルートは、ホストの環境 `Env` を受け取る関数でも書けます（UI = f(env)）。出力（モニタ）ごとの scale で gap を変える例:
+
+```tsx
+"use cdl 1";
+import { Contrast, Appearance, Keybind } from "host:contrast";
+import type { Env } from "host:contrast";
+
+const BASE = px(8);
+
+export default function App({ output }: Env): Element<Contrast> {
+  return (
+    <Contrast>
+      <Appearance gap={BASE * output.scale} radius={BASE} />
+      <Keybind keys={`output-${output.name}`} action={`width ${output.width}`} />
+    </Contrast>
+  );
+}
+```
+
+テキスト子・条件描画・`key`・スロット・引数の分割代入を使った例（`Label` はテキストを、`Group` はスロットと要素・テキストの混在を受け付けるホストのコンポーネント）:
+
+```tsx
+"use cdl 1";
+import { Contrast, Group, Keybind, Label } from "host:contrast";
+
+const binds = [
+  { id: "term", keys: "mod+Return", action: "spawn terminal" },
+  { id: "close", keys: "mod+q", action: "close" },
+];
+
+function Bind({ keys, action = "noop" }: { keys: string; action?: string }): Element<Keybind> {
+  return <Keybind keys={keys} action={action} />;
+}
+
+const verbose = true;
+
+export default (
+  <Contrast>
+    <Group header={<Label>Keybinds</Label>}>
+      {binds.map((b) => <Bind key={b.id} keys={b.keys} action={b.action} />)}
+    </Group>
+    {verbose && <Label>{"2 binds"}</Label>}
+  </Contrast>
+);
+```
+
+複数ファイルとポリシーを含む例は [`examples/contrast/`](examples/contrast/)（出力ごとの設定は `per-output.cdl`）にあります。
 
 ## 目的と非目標
 
@@ -106,9 +152,9 @@ export default (
 | 文字列 | `"…"` / `'…'`。エスケープは `\n \t \\ \" \' \u{…}`（Unicode スカラー値のみ） |
 | テンプレート文字列 | `` `…${式}…` ``。補間できるのは `string` と `number` だけ。タグ付きは不可 |
 | 真偽・不在 | `true` / `false` / `undefined`（`null` はない） |
-| JSX | `<A />`、`<A>…</A>`、フラグメント `<>…</>`。属性値は `"…"` か `{式}` |
+| JSX | `<A />`、`<A>…</A>`、フラグメント `<>…</>`。属性値は `"…"` か `{式}`、子は要素・テキスト・`{式}` |
 
-- JSX のテキスト子（`<Label>text</Label>`）は使えません。`{"text"}` と書きます。
+- JSX のテキスト子（`<Label>text</Label>`）は、子に string を受け付けると宣言したコンポーネントにだけ置けます（それ以外は E3014）。JSX の標準（Babel / TypeScript）と同じ空白規則です（各行の前後の空白を除く。最初の行の先頭と最後の行の末尾は残す。空行を捨て、残りを 1 つの空白でつなぐ。`<Label> hi </Label>` は `" hi "`）。標準と違うのは、空白だけのテキストを常に捨てる点だけです。`{"text"}` は加工しません。文字参照（`&amp;`）は使えず、テキストの `&` は E1012 です。
 - JSX の属性文字列（`name="…"`）はエスケープを解釈しません。文字参照（`&amp;`）も使えず、`&` を書くと字句エラーです。必要なら `name={"a & b"}` と書きます。
 - 単位つきの値は専用リテラルではなく、組み込み関数で作ります: `px(8)` `ms(120)` `sec(1)` `color("#89b4fa")`。
 - コメントは `//` と `/* */`（入れ子不可）。`/** */` は直後の宣言に紐づくドキュメントコメント。
@@ -117,7 +163,7 @@ export default (
 
 - 使える: `const` `function` `return` `if` `else` `switch` `case` `default` `type` `interface` `import` `export` `from` `satisfies` `true` `false` `undefined`
 - 使うと診断: `let` `var` `class` `new` `this` `null` `for` `while` `do` `break` `continue` `async` `await` `yield` `try` `catch` `throw` `enum` `namespace` `as`
-- React の機能も存在せず、専用の診断になります: `use[A-Z0-9_]` で始まる名前（Hooks。`user` は可）、`on[A-Z]` で始まる属性（イベントハンドラ）、`ref` 属性、`key` 属性。
+- React の機能も存在せず、専用の診断になります: `use[A-Z0-9_]` で始まる名前（Hooks。`user` は可）、`on[A-Z]` で始まる属性（イベントハンドラ）、`ref` 属性（`key` 属性は書けます）。
 
 キーワードはプロパティ名としては使えます（`{ default: 1 }`、`a.type`）。束縛の名前には使えません。
 
@@ -144,7 +190,7 @@ export default (
 規則:
 
 - **部分型**: ユニオンの包含と、不変コンテナ（配列・タプル・`Record`・フィールド・`Element<…>`）の共変性だけ。関数型は不変。幅部分型はなく、過剰プロパティは常に誤り。
-- **ユニオン**: リテラル型どうし、`T | undefined`、`Element<A | B>` だけ。オブジェクト型どうしのユニオンや `string | number` は書けない。
+- **ユニオン**: リテラル型どうし、`T | undefined`、`Element<A | B>`、子の型 `Element<A> | string`（要素とテキストの混在）、`c && B` の型 `false | B` だけ。オブジェクト型どうしのユニオンや `string | number` は書けない。
 - **絞り込み**: `undefined` を含む型は `??`・`?.`・`=== undefined` / `!== undefined` で絞ってから使う。対象は識別子と `a.b.c` の形のパスで、`if`・`?:`・`&&`・`||` の中で効く。`switch` の `case` 内では、判定する値がそのリテラル型に絞られる。
 - **`const` の推論**: プリミティブのリテラルで初期化するとリテラル型になる。オブジェクト・配列の中のリテラルは基本型に広がる。
 - `any`・`unknown`・`as`・`!` はない。使える型の演算子は `satisfies` だけ。
@@ -165,7 +211,7 @@ export default (
 | `type` / `interface` | 型宣言 |
 | `function name(a: A): R { … }` | 純関数 |
 | `function Name(props: P): Element<…> { return <…/>; }` | コンポーネント。ASCII 大文字で始まり、props を 1 つだけ受け取り、JSX からだけ使える |
-| `export default <…/>;` | ルート要素 |
+| `export default <…/>;` / `export default function App(env: Env): Element<…> { … }` | ルート。要素（静的な形）か、ホストの `Env` を受け取る関数（アロー関数も可）|
 | `export const policy = { … } satisfies Policy;` | ポリシー |
 
 - トップレベルの宣言は順序を問いません。値は依存関係の順に評価され、循環はエラーです。ブロック内の `const` は、前に宣言した名前だけを参照できます。
@@ -174,7 +220,7 @@ export default (
 ### 式
 
 - 算術 `+ - * / %`、単項 `-`、比較 `=== !== < <= > >=`（`==` `!=` `**` とビット演算はない）、論理 `&& || !`、`??`
-  - `&& || !` と `if` / `?:` の条件は `boolean` だけ（真とみなす判定はない）
+  - `||` `!` と `if` / `?:` の条件は `boolean` だけ（真とみなす判定はない）。`&&` の左辺も `boolean` だけで、右辺は何でもよい（式の型は `false | B`）
   - 文字列の連結はテンプレート文字列で書く
   - `===` は、プリミティブ・リテラル・単位つきの値・`undefined` に使う。オブジェクト・配列・要素や、重なりのない型どうしは比べられない
 - 関数本体では `const` と、全経路が `return` で終わる `if` / `else` / `switch` が書ける。`else` は省略できない。
@@ -186,25 +232,46 @@ export default (
 ### JSX
 
 - 属性は `name={expr}`、`name="text"`、真偽値の省略形 `flag`、スプレッド `{...props}`。
-- 条件は `c ? <A /> : undefined`（`undefined` の子は無視）。`c && <A />` は使えません。
+- 条件は `c ? <A /> : undefined` か `c && <A />`。`false` と `undefined` の子は、どの子の位置でも評価結果から取り除かれます（`true` は置けません）。
+- `key="a"` / `key={expr}`（string だけ。number は E3017 で、`` key={`${n}`} `` と書く）。props ではなくノードの `key` として残り、同じ親の子で重複すると E4011 です（文字列リテラルどうしは評価の前に、動的なものは評価後に、すべて報告）。ユーザー定義のコンポーネントに付けた `key` は、展開後のルート要素の `key` になります。
 - 繰り返しは `xs.map((x) => <Item … />)`。配列の子は自動で平坦化されます。
-- `{…}` の中は純粋な式だけ。イベントハンドラ、`ref`、`key`、Hooks はありません。
+- `{…}` の中は純粋な式だけ。イベントハンドラ、`ref`、Hooks、状態、Context、子としての関数はありません。
+
+### 引数の分割代入
+
+関数・コンポーネントの引数に、1 階層のオブジェクトパターン `{ a, b = 既定値 }: P` を書けます（型注釈は必須）。既定値は `P` で省略可能（`?`）な prop にだけ付けられ（E3015）、本体では `undefined` が除かれた型になります。既定値の式は、prop が `undefined` のときだけ、呼び出しごとに評価されてステップを消費します（同じ関数の引数は参照できません）。
+
+```tsx
+function Bind({ keys, action = "noop" }: { keys: string; action?: string }): Element<Keybind> {
+  return <Keybind keys={keys} action={action} />;
+}
+```
 
 ### 書けない TypeScript の構文
 
-分割代入、`enum`、import の改名、既定引数・省略可能引数、計算プロパティ名、メソッド構文、`interface … extends`、交差型、`keyof` などの型演算子、正規表現、BigInt、カンマ演算子、`export { … }` と再エクスポート、ブロック内の関数宣言、`f(...xs)`。
+`const` への分割代入と、引数パターンの別名・入れ子・rest、`enum`、import の改名、既定引数・省略可能引数（引数パターンの `{ a = 既定値 }` は書けます）、計算プロパティ名、メソッド構文、`interface … extends`、交差型、`keyof` などの型演算子、正規表現、BigInt、カンマ演算子、`export { … }` と再エクスポート、ブロック内の関数宣言、`f(...xs)`。
 
 ## ドキュメントモデルとスキーマ
 
-エントリファイルはちょうど 1 つの `export default`（ルート要素）を持ちます。評価すると、コンポーネントがすべて展開された不変の要素ツリーになります。各ノードは、その要素を作った JSX の位置と、展開の途中で通ったコンポーネント呼び出しの位置の列を持つので、ホストは「どの行の設定か」を診断に使えます。
+エントリファイルはちょうど 1 つの `export default`（ルート）を持ちます。ルートは要素（静的な形）か、引数 1 つの関数（下記）です。評価すると、コンポーネントがすべて展開された不変の要素ツリーになります。各ノードは、その要素を作った JSX の位置と、展開の途中で通ったコンポーネント呼び出しの位置の列を持つので、ホストは「どの行の設定か」を診断に使えます。
 
 **スキーマ**はホストが Rust のビルダー API で登録し、`import { Contrast } from "host:contrast"` のように取り込みます（CDL の中に `declare` は書けません）。各コンポーネントは props の型と、子に許す要素の型を持ち、ルート要素の種類もホストが指定します。
 
 - props は閉じた型。省略できるのは `?` 付きだけで、欠落・余分・型違いは診断される。
-- 子は、平坦化して `undefined` を除いた配列として渡される。型の違う子は診断される。`children` 属性と JSX の子は同時に書けない。
+- 子は、平坦化して `false` と `undefined` を除いた配列として渡される。型の違う子は診断される。`children` 属性と JSX の子は同時に書けない。
+- 評価結果の子ノードは、要素かテキスト（string）。テキストを受け付けるコンポーネントは、ホストの `ComponentDef::text_children()` で宣言する（ユーザー定義のコンポーネントは `children: string[]`）。
+- `key` は props ではなく、ノードの `key` として残る（`cdl-host` の `Node::key()`）。ホストの同一性は、key → ホストが宣言した識別 prop → 親・位置の順。
 - ホストが一意と宣言した子（例: `Appearance`）の重複はエラー（後勝ちにしない）。`map` が作る子は、評価後のツリーで検査する。
 - 値が `undefined` の props はツリーに含めない。関数の props はツリーに置けない。
+- **スロット**: 要素を props に渡せる（`<Group header={<Label />}>`）。props の型は `Element<Label>`（ユニオン・配列も可）で、スロットの要素は子とは別に props の値として残る。型違いの要素は E3016。
+- **子の型**: `(Element<A> | string)[]` で、要素とテキストの混在する子を受け取れる（テキストだけなら `string[]`）。
 - ツリーは評価後に不変で、ホストは旧ツリーとの差分でリロードできる。
+
+### ルートの関数の形（UI = f(env)）
+
+`export default` に、ホストの環境 `Env`（出力の名前・解像度・scale など）を受け取る関数を書けます。引数は名前つきか 1 階層のオブジェクトパターンで、型注釈は必須。型はホストが宣言した `Env`（`import type { Env } from "host:contrast"`）と完全に一致しなければならず（E4012）、戻り値の注釈（ルート要素）も必須です。`Env` を宣言していないホストでは書けません（E4013）。
+
+評価は純粋なままです。ホストは 1 回読み込んだ `Program` から、`Program::render(&env)` で何度でも（複数のスレッドからでも）要素ツリーを作ります。render ごとに独立したステップ予算を使い、同じ `env` からは必ず同じ木になります。`env` の値が `Env` の型に合わなければ E4014。静的な形のルートでは `env` は無視されます。関数の形のルートの本体は render のときに評価されるので、評価の誤りもそのとき報告されます（`cdl check` は型検査まで）。
 
 参照ホスト `host:contrast`（適合テストと CLI が使う）のスキーマは [`conformance/HOST.md`](conformance/HOST.md) にあります。
 
@@ -297,7 +364,7 @@ import { Contrast } from "host:contrast";
 | E4xxx | スキーマ適合 | ホストの組み込みコンポーネントと `Policy` についての検査 |
 | E5xxx | 評価 | リソース上限超過、0 除算、オーバーフロー |
 
-- E3 と E4 の境界: ホストの組み込みコンポーネントと `Policy` についての検査は E4、それ以外（CDL 内のコンポーネントや型を含む）は E3。
+- E3 と E4 の境界: ホストの組み込みコンポーネントと `Policy` についての検査は E4、それ以外（CDL 内のコンポーネントや型を含む）は E3。例外として、テキスト子を受け付けない位置のテキスト（E3014）とスロットの型違い（E3016）は、ホストの組み込みに対するものも E3。
 - 診断は (ファイル, 開始, 終了, コード) の順に並べて返す。意味を変えるときは新しいコードを振る。
 - 人間向け（ソース抜粋と下線つき）と機械向け（JSON）で出力できる。JSON は互換性の対象（フィールドの追加は可、削除と意味変更は edition を上げない限りしない）。
 - コード一覧: [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md)
@@ -315,6 +382,7 @@ cargo run -p cdl-cli -- check examples/contrast/main.cdl          # 検査（評
 cargo run -p cdl-cli -- eval  examples/contrast/main.cdl          # 評価して値木を JSON で出す
 cargo run -p cdl-cli -- check --json file.cdl                     # 診断を JSON で出す
 cargo run -p cdl-cli -- check --stage syntax file.cdl             # syntax / sema / eval の段階で止める
+cargo run -p cdl-cli -- eval --env env.json examples/contrast/per-output.cdl   # 関数の形のルートに Env（JSON）を渡す
 ```
 
 - 終了コード: `0` 成功、`1` 診断あり、`2` 使い方の誤り。
@@ -335,14 +403,35 @@ let schema = Schema::builder()
 let engine = Engine::new().with_schema(schema).with_limits(Limits::default());
 let program = engine.load(&resolver, "main.cdl")?;      // Result<Program, Vec<Diagnostic>>
 
-// 3. 値木を Rust の型へ読み出す（失敗は E4008）
-let root = program.root();
+// 3. 要素ツリーを作り（ルートが関数の形なら `Env` を渡す。UI = f(env)）、Rust の型へ読み出す（失敗は E4008）
+let tree = program.render(&env)?;                         // Result<Arc<Element>, Vec<Diagnostic>>
+let config: Config = Node::new(&tree).read()?;            // Config: FromNode（手書き。derive はない）
 
 // 4. ポリシーのフックを呼ぶ（失敗したらホストの既定動作に戻す）
 let placement = program.call_hook("windowOpen", arg)?;
 ```
 
-動く例: `cargo run -p cdl-host --example contrast`（スキーマの登録・import・Rust の型への変換・フック呼び出し）。公開 API の互換性（semver）を約束するのは `cdl-host` だけで、ほかのクレートは内部実装です。
+動く例: `cargo run -p cdl-host --example contrast`（スキーマの登録・import・`FromNode` の手書き・出力ごとの `Env` での render・フック呼び出し）。公開 API の互換性（semver）を約束するのは `cdl-host` だけで、ほかのクレートは内部実装です。
+
+### 安定させる面（`cdl-host`）
+
+互換性（semver）を約束する面。仕様が `0.x` のあいだは、次の形を「最終形の候補」として固め、変えるときは破壊的変更として DECISIONS に記録する。
+
+| 名前 | 署名・役割 |
+| --- | --- |
+| `Engine` | `new() / with_schema(Schema) / with_limits(Limits)`、`load(&dyn ModuleResolver, &str) -> Result<Program, Vec<Diagnostic>>`、`check`、`check_until(…, Stage)` |
+| `Program` | `render(&Value) -> Result<Arc<Element>, Vec<Diagnostic>>`（`Env` から木を作る。何度でも・複数スレッドから。静的な形のルートでは `Env` を無視）、`is_function_root() -> bool`、`root() -> Option<Node>` / `document() -> Option<&Element>`（静的な形のルートだけ）、`files()`、`call_hook(&str, Value) -> Result<Option<Value>, Diagnostic>`。`Send + Sync` |
+| `Schema` / `SchemaBuilder` / `ComponentDef` | `root(module, name)`、`env(module, Ty)`（`Env` の宣言）、`component(module, def)`、`type_def(module, name, Ty)`、`build()`。`ComponentDef`: `prop` / `optional_prop` / `children` / `unique_child` / `text_children` |
+| `Value` | 値（`Undefined / Bool / Number / String / Length / Duration / Color / Array / Object / Element / Function`） |
+| `Element` | 評価結果のノードの実体: `name`・`props`・`key: Option<String>`・`children: Vec<ChildNode>`・`span`・`expanded_from` |
+| `ChildNode` | `Element(Arc<Element>)` / `Text(Arc<str>)`（`as_element()` / `as_text()`） |
+| `Node<'a>`（読み出しの入口） | `component() -> &str`、`key() -> Option<&str>`、`props() -> &BTreeMap<String, Value>`、`span() -> &Span`、`expanded_from()`、`children()`（要素だけ）、`child_nodes() -> Child`（`Child::Element(Node)` / `Child::Text(&str)`）、`children_named(&str)`、`children_of::<T: FromNode>()`、`unique_child::<T>()` / `required_child::<T>()`、`read::<T>()`、`prop::<T: FromValue>(&str)`、`slot(&str)` / `slots(&str)` / `slot_as::<T>(&str)`、`expect_component(&str)`、`error(msg)` |
+| `FromValue` | props の値から読む trait（`expected() -> String`、`from_value(&Value) -> Option<Self>`）。標準で `String` / `f64` / `bool` / `Px` / `Millis` / `Rgba` / `Option<T>` / `Vec<T>` |
+| `FromNode` | 1 ノードから読む trait（`const COMPONENT`、`from_node(Node) -> Result<Self, Diagnostic>`）。derive はなく、手で書く（`examples/contrast.rs`） |
+| `ModuleResolver` / `Source` / `Limits` / `Stage` / `Ty` / `Field` / `Diagnostic` / `diag` | 従来どおり |
+
+読み出しの失敗は、要素の位置つきの診断（E4008）。省略できる prop は `Option<T>` で読む。
+
 
 ## リポジトリ構成
 
@@ -355,7 +444,8 @@ crates/
   cdl-host/    組み込み API（Engine / ModuleResolver / Limits / Schema）
   cdl-cli/     check / eval
 conformance/   .cdl と期待結果（値木 or 診断の JSON）。実装非依存
-docs/          SPEC.md, DECISIONS.md, DIAGNOSTICS.md, PROTOTYPE-REPORT.md, AUDIT.md, HANDOFF.md
+docs/          SPEC.md（正典）, DECISIONS.md（決定。R1〜R4・U1〜U5 が v0.1 の仕様変更）, DIAGNOSTICS.md（診断コード表）,
+               PROTOTYPE-REPORT.md・AUDIT.md・HANDOFF.md（2026-11-11 時点の記録）
 examples/      Contrast 向けの設定例とホスト組み込みの例
 scripts/       check-all.sh ほか
 ```
@@ -393,11 +483,11 @@ bash scripts/verify.sh      # 手動確認用: test / fmt / clippy（メモリ�
 - 個別のスクリプト: `check-rules.sh`（unsafe・unwrap・`as`・oxc の漏れ・依存の向き・fs/env/time・HashMap の静的検査。最初の `#[cfg(test)]` 以降は走査しない）、`check-conformance.sh`（期待結果の有無・2 回評価の一致・禁止構文・診断コードの各帯）、`check-spec-examples.sh`（SPEC の例が通ること）。
 - 結果は OK / NG / 未実行 の 3 種類で、入っていないツールは「未実行」であり成功ではありません。
 
-Kani の実行結果: 9 個成功。`lexer_never_panics` は時間切れで実行対象から外した（`WITH_KANI=1 bash scripts/check-all.sh` はすべて OK）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`。
+Kani の実行結果（2026-11-11）: 9 個成功。`lexer_never_panics` は時間切れで実行対象から外した。**v0.1 の変更（2026-11-12）のあと、Kani は再実行していない**（未実行。ハーネスの対象のコードは、字句検査の `,` `;` の扱いを除いて触れていない）。実行していないこと: cargo-fuzz（使わない方針）、ベンチ。最終精査は `docs/AUDIT.md`。
 
 ### 適合テスト（`conformance/`）
 
-`conformance/<節>/<名前>.cdl` と `<名前>.expected.json` を並べます。禁止構文は `conformance/forbidden/<id>.cdl`、複数ファイルは `<節>/<名前>/main.cdl` と `expected.json` です。期待結果は `{"value": …}`（値木。span は比べない）か `{"diagnostics": […]}`（コード・重大度・span を比べる）で、フックの呼び出しは `calls.json` に書きます。値木の JSON は、要素 `{"element": "Name", "props": {…}, "children": […]}`、単位つきの値 `{"length": 16}` `{"duration": 120}` `{"color": [r, g, b, a]}`、配列内の `undefined` `{"undefined": true}` です。実装に依存しない形式なので、別実装も同じスイートで検証できます。詳細は [`conformance/README.md`](conformance/README.md)。
+`conformance/<節>/<名前>.cdl` と `<名前>.expected.json` を並べます。禁止構文は `conformance/forbidden/<id>.cdl`、複数ファイルは `<節>/<名前>/main.cdl` と `expected.json` です。期待結果は `{"value": …}`（値木。span は比べない）か `{"diagnostics": […]}`（コード・重大度・span を比べる）で、フックの呼び出しは `calls.json` に書きます。値木の JSON は、要素 `{"element": "Name", "key": "k", "props": {…}, "children": […]}`（`key` はあるときだけ。子はテキストなら文字列）、単位つきの値 `{"length": 16}` `{"duration": 120}` `{"color": [r, g, b, a]}`、配列内の `undefined` `{"undefined": true}` です。実装に依存しない形式なので、別実装も同じスイートで検証できます。詳細は [`conformance/README.md`](conformance/README.md)。
 
 ## バージョニング
 
@@ -408,9 +498,25 @@ Kani の実行結果: 9 個成功。`lexer_never_panics` は時間切れで実�
 - スキーマのバージョンは言語の edition とは独立で、ホストが管理する。
 - 仕様書が `0.x` のあいだ、edition 1 は不安定。
 
-## プロトタイプの現状
+## v0.1 の現状
 
-完成の条件は、`WITH_KANI=1 bash scripts/check-all.sh` がすべて OK（rules・fmt・clippy・test 125 件・conformance・spec-examples・kani）で、最終精査で見つかった重大な問題が 0 件であること。2026-11-11 時点で満たしています。
+v0.1 は、仕様（`docs/SPEC.md`）の全体を実装し、`bash scripts/check-all.sh`（rules・fmt・clippy・test・conformance・spec-examples）がすべて OK の状態です（テスト 171 件、適合テスト 150 ケース。Kani は上記のとおり未実行）。`0.x` のあいだ、仕様・診断コードの追加・`cdl-host` の公開 API は、破壊的に変わりうります。
+
+### v0.1 に至る主な仕様変更
+
+`docs/DECISIONS.md` に、変更前・変更後・理由・Contrast への影響を書いています。
+
+| 決定 | 内容 |
+| --- | --- |
+| R1 | テキスト子 `<Label>text</Label>`（子に string を受け付けるコンポーネントだけ）。文字参照は不可（E1012） |
+| R2 | 条件描画 `c && <A />`（左辺は boolean だけ。型は `false \| B`）。`false` と `undefined` の子は取り除かれる |
+| R3 | `key`（props ではなくノードに残る。重複は E4011） |
+| R4 | 引数の 1 階層の分割代入と既定値 |
+| U1 | ルートを `Env` の関数にできる。`Program::render(&env)` |
+| U2 | `Element<A> \| string`（混在する子）、スロット（要素を props に渡す。型違いは E3016） |
+| U3 | `key` は string だけ（E3017）。重複を、評価前・評価後ともすべて報告 |
+| U4 | `cdl-host` の公開 API の整理（`Node` / `FromNode` / `FromValue`） |
+| U5 | テキストの空白規則を JSX の標準に合わせた（空白だけのテキストは常に捨てる） |
 
 **できること**
 - パース（`oxc_parser` 経由）、名前解決、型検査、スキーマ適合、評価、ポリシーのフック、複数ファイルの import、CLI の `check` / `eval`、Rust のスキーマ・ビルダーと値木の読み出し（`cdl-host`）。
@@ -421,14 +527,14 @@ Kani の実行結果: 9 個成功。`lexer_never_panics` は時間切れで実�
 
 **検証したこと**
 - 最終精査（[`docs/AUDIT.md`](docs/AUDIT.md)）で、abort・資源枯渇・実用上の非停止を 5 件（P1〜P5）見つけて修正し、軽微な 2 件（P6・P7）も対処しました。各々に適合テストを足しています（型の大きさ E3013、評価の再帰 E5012、ファイル数 E5013 など）。
-- Kani は 10 個のハーネスのうち 9 個が成功です。`lexer_never_panics` は入力を 2 バイトまで下げても時間切れで、実行対象から外しました（証明できていません。proptest と突然変異ファジングで代替）。
+- Kani は 10 個のハーネスのうち 9 個が成功です（2026-11-11。v0.1 の変更のあとは未実行）。`lexer_never_panics` は入力を 2 バイトまで下げても時間切れで、実行対象から外しました（証明できていません。proptest と突然変異ファジングで代替）。
 
 **確かめていないこと**
 - `check.rs`・`convert.rs` の全行精読（再帰の深さの確認と極端な上限値のテストで代えました）。入れ子の前走査が数えない構文が、ほかにもあるかもしれません。
 - cargo-fuzz、ベンチ、実際の設定ファイルの規模での性能と上限の既定値の妥当性（既定値は暫定）。oxc 自体のソースの精査。
 - Kani と proptest は、仕様の主張を証明するものではありません（SPEC 第 12 章）。
 
-DECISIONS の決定は SPEC に反映済みです。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md) にあります。
+DECISIONS の決定は SPEC に反映済みです。実装して分かったことは [`docs/PROTOTYPE-REPORT.md`](docs/PROTOTYPE-REPORT.md)（2026-11-11 時点）にあります。
 
 ## ライセンス
 

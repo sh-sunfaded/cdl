@@ -23,7 +23,8 @@ const USAGE: &str =
   eval    評価して、値木を JSON で出す
   --json  診断を JSON で出す（既定は人間向け）
   --preset contrast  参照ホスト host:contrast のスキーマを使う（既定。いまはこれだけ）
-  --stage  その段階までで止める（check のみ。既定は eval）";
+  --stage  その段階までで止める（check のみ。既定は eval）
+  --env    ルートが関数の形のとき、引数 Env の JSON ファイル（eval のみ）";
 
 /// パスを字面のまま正規化する（`.` を除き、`..` を前の要素と打ち消す）。
 fn normalize(path: &Path) -> String {
@@ -107,13 +108,23 @@ pub fn contrast_schema() -> Schema {
             Box::new(placement.clone()),
         )),
     )]);
+    let env = Ty::object([(
+        "output",
+        Field::required(Ty::object([
+            ("name", Field::required(Ty::String)),
+            ("width", Field::required(Ty::Number)),
+            ("height", Field::required(Ty::Number)),
+            ("scale", Field::required(Ty::Number)),
+        ])),
+    )]);
     let m = "host:contrast";
     let built = Schema::builder()
         .root(m, "Contrast")
+        .env(m, env)
         .component(
             m,
             ComponentDef::new("Contrast")
-                .children(&["Appearance", "Animation", "Keybind"])
+                .children(&["Appearance", "Animation", "Keybind", "Label", "Group"])
                 .unique_child("Appearance"),
         )
         .component(
@@ -134,6 +145,17 @@ pub fn contrast_schema() -> Schema {
             ComponentDef::new("Keybind")
                 .prop("keys", Ty::String)
                 .prop("action", Ty::String),
+        )
+        // テキスト子（`<Label>text</Label>`）を受け付ける唯一のコンポーネント（DECISIONS R1）。
+        .component(m, ComponentDef::new("Label").text_children())
+        // スロット（要素を渡す props）と、要素・テキストの混在の子を持つコンポーネント（DECISIONS U2）。
+        .component(
+            m,
+            ComponentDef::new("Group")
+                .optional_prop("header", Ty::element("Label"))
+                .optional_prop("footer", Ty::Array(Box::new(Ty::element("Label"))))
+                .children(&["Keybind"])
+                .text_children(),
         )
         .type_def(m, "WindowInfo", window_info)
         .type_def(m, "Placement", placement)
@@ -173,6 +195,8 @@ struct Args<'a> {
     file: &'a str,
     as_json: bool,
     stage: Stage,
+    /// `eval` で、関数の形のルートに渡す `Env` の JSON ファイル。
+    env: Option<&'a str>,
 }
 
 /// 引数を読む。形が合わなければ `None`（使い方の誤り）。
@@ -181,12 +205,14 @@ fn parse_args(args: &[String]) -> Option<Args<'_>> {
     let mut as_json = false;
     let mut stage = None;
     let mut preset = None;
+    let mut env = None;
     let mut it = args.iter().map(String::as_str);
     while let Some(a) = it.next() {
         match a {
             "--json" => as_json = true,
             "--stage" if stage.is_none() => stage = Some(it.next()?),
             "--preset" if preset.is_none() => preset = Some(it.next()?),
+            "--env" if env.is_none() => env = Some(it.next()?),
             _ if a.starts_with("--") => return None,
             _ => positional.push(a),
         }
@@ -195,6 +221,9 @@ fn parse_args(args: &[String]) -> Option<Args<'_>> {
         return None;
     };
     if preset.is_some_and(|p| p != "contrast") {
+        return None;
+    }
+    if env.is_some() && *command != "eval" {
         return None;
     }
     let stage = match stage {
@@ -208,6 +237,7 @@ fn parse_args(args: &[String]) -> Option<Args<'_>> {
         file,
         as_json,
         stage,
+        env,
     })
 }
 
@@ -218,6 +248,7 @@ pub fn run(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
         file,
         as_json,
         stage,
+        env,
     }) = parse_args(args)
     else {
         let _ = writeln!(err, "{USAGE}");
@@ -235,7 +266,34 @@ pub fn run(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
         Err(diags) => report(&diags, &sources, as_json, out, err),
         Ok(None) => EXIT_OK,
         Ok(Some(program)) => {
-            let tree = json::element_json(program.document());
+            let rendered = if program.is_function_root() {
+                let Some(path) = env else {
+                    let _ = writeln!(
+                        err,
+                        "ルートが関数の形です。`--env <Env の JSON ファイル>` を付けてください"
+                    );
+                    return EXIT_USAGE;
+                };
+                let value = std::fs::read_to_string(path)
+                    .map_err(|e| e.to_string())
+                    .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
+                    .ok()
+                    .and_then(|j| json::json_value(&j));
+                let Some(value) = value else {
+                    let _ = writeln!(err, "`--env` のファイルを JSON の値として読めない: {path}");
+                    return EXIT_USAGE;
+                };
+                match program.render(&value) {
+                    Ok(el) => el,
+                    Err(d) => return report(&d, &sources, as_json, out, err),
+                }
+            } else {
+                match program.render(&cdl_host::Value::Undefined) {
+                    Ok(el) => el,
+                    Err(d) => return report(&d, &sources, as_json, out, err),
+                }
+            };
+            let tree = json::element_json(&rendered);
             match serde_json::to_string_pretty(&tree) {
                 Ok(text) => {
                     let _ = writeln!(out, "{text}");

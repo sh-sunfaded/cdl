@@ -323,8 +323,7 @@ pub(crate) fn load_until(
             deps,
         })
         .collect();
-    let evaluated =
-        cdl_eval::evaluate(&units, entry, &engine.schema, &limits).map_err(|d| vec![d])?;
+    let evaluated = cdl_eval::evaluate(&units, entry, &engine.schema, &limits).map_err(sorted)?;
     drop(units);
     Ok(Some(Program {
         modules,

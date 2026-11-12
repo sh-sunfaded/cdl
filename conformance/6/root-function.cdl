@@ -1,0 +1,16 @@
+// §6 ルート: `export default` は、引数 `Env` 1 つの関数でもよい（UI = f(env)。DECISIONS U1）。
+// 出力ごとの scale で gap を変える。`Env` は、ホストが宣言した型（host:contrast）。
+"use cdl 1";
+import { Contrast, Appearance, Keybind } from "host:contrast";
+import type { Env } from "host:contrast";
+
+const BASE = px(8);
+
+export default function App({ output }: Env): Element<Contrast> {
+  return (
+    <Contrast>
+      <Appearance gap={BASE * output.scale} radius={BASE} />
+      <Keybind keys={`output-${output.name}`} action={`width ${output.width}`} />
+    </Contrast>
+  );
+}

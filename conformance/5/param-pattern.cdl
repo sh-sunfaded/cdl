@@ -1,0 +1,31 @@
+// §5 宣言: 引数の 1 階層のオブジェクトパターン `{ a, b = 既定値 }: P`（DECISIONS R4）。
+// 既定値は省略可能（`?`）な prop にだけ付けられ、本体の中ではその名前の型から undefined が除かれる。
+// 既定値は、props が undefined のとき、呼び出しごとに評価する。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+const DEFAULT_ACTION = "run";
+
+interface BindProps {
+  keys: string;
+  action?: string;
+  times?: number;
+}
+
+function Bind({ keys, action = DEFAULT_ACTION, times }: BindProps): Element<Keybind> {
+  return <Keybind keys={keys} action={`${action}x${times ?? 1}`} />;
+}
+
+const sum = ({ a, b = 2 }: { a: number; b?: number }): number => a + b;
+
+const rows: { keys: string }[] = [{ keys: "m1" }, { keys: "m2" }];
+
+export default (
+  <Contrast>
+    <Bind keys="a" />
+    <Bind keys="b" action="go" times={3} />
+    <Bind keys="c" action={undefined} />
+    <Keybind keys={`sum${sum({ a: 1 })}`} action={`${sum({ a: 1, b: 5 })}`} />
+    {rows.map(({ keys }: { keys: string }) => <Keybind keys={keys} action="m" />)}
+  </Contrast>
+);

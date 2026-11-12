@@ -1,0 +1,10 @@
+// §5 JSX: テキスト子の文字参照（`&amp;` など）は使えない。E1012（DECISIONS R1）。`&` は `{"a & b"}` と書く。
+"use cdl 1";
+import { Contrast, Label } from "host:contrast";
+
+export default (
+  <Contrast>
+    <Label>fish &amp; chips</Label>
+    <Label>{"fish & chips"}</Label>
+  </Contrast>
+);

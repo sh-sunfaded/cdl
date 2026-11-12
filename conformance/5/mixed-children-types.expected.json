@@ -1,0 +1,24 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Group",
+        "props": {},
+        "children": [
+          "hello",
+          { "element": "Keybind", "props": { "keys": "x", "action": "y" }, "children": [] }
+        ]
+      },
+      {
+        "element": "Group",
+        "props": {},
+        "children": [
+          "first",
+          { "element": "Keybind", "props": { "keys": "k", "action": "a" }, "children": [] }
+        ]
+      }
+    ]
+  }
+}

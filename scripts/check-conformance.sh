@@ -95,7 +95,7 @@ done
 [ "$bad" = 0 ] && ok "全ケースで出力が一致し、パニックもない"
 
 echo "[3] 禁止構文が、診断コード付きで弾かれること"
-forbidden_ids="let var class new this null for while try async enum as hooks event-handler ref destructuring rest-param text-child and-render"
+forbidden_ids="let var class new this null for while try async enum as hooks event-handler ref destructuring rest-param and-nonboolean"
 bad=0
 for id in $forbidden_ids; do
   f="$CONF/forbidden/$id.cdl"

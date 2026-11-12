@@ -5,8 +5,8 @@
       "severity": "error",
       "span": {
         "file": "3/react-features.cdl",
-        "start": 175,
-        "end": 183
+        "start": 205,
+        "end": 213
       }
     },
     {
@@ -14,8 +14,8 @@
       "severity": "error",
       "span": {
         "file": "3/react-features.cdl",
-        "start": 199,
-        "end": 206
+        "start": 229,
+        "end": 236
       }
     },
     {
@@ -23,8 +23,8 @@
       "severity": "error",
       "span": {
         "file": "3/react-features.cdl",
-        "start": 272,
-        "end": 275
+        "start": 302,
+        "end": 305
       }
     },
     {
@@ -32,17 +32,8 @@
       "severity": "error",
       "span": {
         "file": "3/react-features.cdl",
-        "start": 280,
-        "end": 283
-      }
-    },
-    {
-      "code": "E1007",
-      "severity": "error",
-      "span": {
-        "file": "3/react-features.cdl",
-        "start": 288,
-        "end": 295
+        "start": 318,
+        "end": 325
       }
     }
   ]

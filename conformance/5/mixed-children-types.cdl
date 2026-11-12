@@ -1,0 +1,19 @@
+// §4 型: 子の型に `Element<A> | string` を書ける。要素とテキストを混在できる（DECISIONS U2）。
+"use cdl 1";
+import { Contrast, Group, Keybind } from "host:contrast";
+
+function Box(props: { children: (Element<Keybind> | string)[] }): Element<Group> {
+  return <Group>{props.children}</Group>;
+}
+
+const mixed: (Element<Keybind> | string)[] = ["first", <Keybind keys="k" action="a" />];
+
+export default (
+  <Contrast>
+    <Box>
+      hello
+      <Keybind keys="x" action="y" />
+    </Box>
+    <Group>{mixed}</Group>
+  </Contrast>
+);

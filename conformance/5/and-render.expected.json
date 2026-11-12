@@ -1,0 +1,24 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "shown",
+          "action": "a"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "in-array",
+          "action": "e"
+        },
+        "children": []
+      }
+    ]
+  }
+}

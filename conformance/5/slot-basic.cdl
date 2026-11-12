@@ -1,0 +1,15 @@
+// §6 スロット: 要素を props に渡せる（`header={<Label />}`）。props の型は `Element<Label>`（配列でもよい）。
+// スロットの要素は、子とは別に、props の値としてノードに残る。子には、要素とテキストを混在できる（DECISIONS U2）。
+"use cdl 1";
+import { Contrast, Group, Keybind, Label } from "host:contrast";
+
+export default (
+  <Contrast>
+    <Group header={<Label>Title</Label>} footer={[<Label>a</Label>, <Label>b</Label>]}>
+      intro
+      <Keybind keys="a" action="b" />
+      {"outro"}
+    </Group>
+    <Group />
+  </Contrast>
+);

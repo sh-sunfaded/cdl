@@ -1,0 +1,22 @@
+{
+  "diagnostics": [
+    {
+      "code": "E4005",
+      "severity": "error",
+      "span": {
+        "file": "5/true-child.cdl",
+        "start": 228,
+        "end": 234
+      }
+    },
+    {
+      "code": "E4005",
+      "severity": "error",
+      "span": {
+        "file": "5/true-child.cdl",
+        "start": 239,
+        "end": 242
+      }
+    }
+  ]
+}

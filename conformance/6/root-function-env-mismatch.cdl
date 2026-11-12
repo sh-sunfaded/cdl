@@ -1,0 +1,8 @@
+// §6 ルート: ホストが渡した Env の値が型に合わなければ E4014（render の診断。位置はルート）。
+"use cdl 1";
+import { Contrast } from "host:contrast";
+import type { Env } from "host:contrast";
+
+export default function App(env: Env): Element<Contrast> {
+  return <Contrast />;
+}

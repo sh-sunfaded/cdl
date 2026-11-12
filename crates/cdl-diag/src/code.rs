@@ -53,11 +53,12 @@ codes! {
     UnsupportedEdition => "E1004", "実装が対応していない edition";
     UnsupportedSyntax => "E1005", "CDL にない構文";
     ReservedWord => "E1006", "予約語の使用";
-    ReactFeature => "E1007", "CDL にない React の機能（Hooks・イベント属性・`ref`・`key`）";
+    ReactFeature => "E1007", "CDL にない React の機能（Hooks・イベント属性・`ref`。`key` は 2026-11-12 から許可）";
     NestingTooDeep => "E1008", "構文の入れ子が深すぎる";
-    JsxTextChild => "E1009", "JSX のテキスト子";
+    JsxTextChild => "E1009", "（廃止）JSX のテキスト子。2026-11-12 からテキスト子は許可で、このコードは出さない";
     MissingElse => "E1010", "`else` のない `if`";
     LowercaseJsxTag => "E1011", "小文字で始まる JSX タグ";
+    JsxTextCharRef => "E1012", "JSX のテキスト子の `&`（文字参照は使えない）";
     ModuleNotFound => "E2001", "モジュールを解決できない";
     UndefinedName => "E2002", "未定義の名前";
     DuplicateName => "E2003", "同じ名前の宣言の重複";
@@ -82,6 +83,10 @@ codes! {
     NotAComponent => "E3011", "コンポーネントでない名前の JSX タグ";
     ChildrenTwice => "E3012", "`children` 属性と子の併記";
     TypeTooLarge => "E3013", "型が大きすぎる（深さ・ノード数・参照の深さの上限）";
+    TextChildNotAccepted => "E3014", "テキスト子を受け付けないコンポーネントにテキストを置いた";
+    DefaultOnRequired => "E3015", "省略可能でない prop への既定値（引数の分割代入）";
+    SlotType => "E3016", "スロット（要素を渡す props）に、型の違う要素を渡した";
+    KeyNotString => "E3017", "`key` が string でない（number など）";
     RootElement => "E4001", "ルート要素がない・複数ある・種類が違う";
     MissingHostProp => "E4002", "組み込みコンポーネントの必須の props がない";
     UnknownHostProp => "E4003", "組み込みコンポーネントの未知の props";
@@ -92,6 +97,10 @@ codes! {
     ConversionFailed => "E4008", "値木からホストの型への変換の失敗";
     PolicyNotSatisfied => "E4009", "`export const policy` に `satisfies Policy` がない";
     UnknownHook => "E4010", "ホストの `Policy` にないフック";
+    DuplicateChildKey => "E4011", "同じ親の子の `key` の重複";
+    RootFunctionSignature => "E4012", "ルート関数の引数が `Env` 1 つでない（数・型・注釈）";
+    RootFunctionWithoutEnv => "E4013", "ホストが `Env` を宣言していないのに、ルートを関数の形で書いた";
+    EnvMismatch => "E4014", "ホストが渡した `Env` の値が、宣言した型に合わない";
     Internal => "E5000", "評価器の内部エラー（型検査を通った式の型の誤り。実装の不具合）";
     SourceTooLarge => "E5001", "ソースサイズの上限超過";
     StepLimit => "E5002", "評価ステップの上限超過";

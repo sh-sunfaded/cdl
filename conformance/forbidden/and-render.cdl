@@ -1,5 +1,0 @@
-// §5 JSX: `c && <A />` は書けない。`&&` のオペランドは boolean だけ（E3006。DECISIONS A2・S2）。
-"use cdl 1";
-import { Contrast, Keybind } from "host:contrast";
-const on = true;
-export default (<Contrast>{on && <Keybind keys="a" action="b" />}</Contrast>);

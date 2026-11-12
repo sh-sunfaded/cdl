@@ -2,7 +2,8 @@
 //!
 //! 1. 組み込みコンポーネント（Contrast / Appearance / Animation / Keybind）とポリシーの型を Rust で登録する。
 //! 2. ファイルシステムのリゾルバを用意する（ソースを読むのはホストの仕事。SPEC 第 9 章）。
-//! 3. 設定を読み、値木を Rust の型に変換する。変換の失敗は診断として返る。
+//! 3. `Program::render` で要素ツリーを作り、`FromNode` / `FromValue`（手書き）で Rust の型に変換する。
+//!    変換の失敗は、そのノードの位置つきの診断として返る。ルートが関数の形なら、出力ごとの `Env` で render し直す。
 //! 4. ポリシーのフックを呼ぶ。失敗したらホストの既定の動作に戻す。
 //!
 //! 実行: `cargo run -p cdl-host --example contrast`（または、引数に .cdl のパス）
@@ -11,8 +12,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use cdl_host::{
-    ComponentDef, Diagnostic, Engine, Field, Millis, ModuleResolver, Node, Program, Px, Rgba,
-    Schema, Source, Ty, Value,
+    ComponentDef, Diagnostic, Engine, Field, FromNode, Millis, ModuleResolver, Node, Program, Px,
+    Rgba, Schema, Source, Ty, Value,
 };
 
 /// Contrast のスキーマ。
@@ -28,6 +29,18 @@ fn schema() -> Result<Schema, Vec<String>> {
     ]);
     Schema::builder()
         .root(m, "Contrast")
+        .env(
+            m,
+            Ty::object([(
+                "output",
+                Field::required(Ty::object([
+                    ("name", Field::required(Ty::String)),
+                    ("width", Field::required(Ty::Number)),
+                    ("height", Field::required(Ty::Number)),
+                    ("scale", Field::required(Ty::Number)),
+                ])),
+            )]),
+        )
         .component(
             m,
             ComponentDef::new("Contrast")
@@ -91,41 +104,80 @@ impl ModuleResolver for Files {
     }
 }
 
-/// Contrast 側の設定の型。
+/// Contrast 側の設定の型。`FromNode` を手で実装して、値木の 1 ノードから読む（derive マクロはない）。
+/// 失敗は、そのノードの位置つきの診断（E4008）になる。
 #[derive(Debug)]
-struct Config {
+struct Appearance {
     gap: Px,
     radius: Px,
     focus_color: Option<Rgba>,
-    animation: Millis,
-    animation_enabled: bool,
-    keybinds: Vec<(String, String)>,
 }
 
-/// 値木を Contrast の型に変換する。スキーマが保証しない部分（必須の子など）もここで確かめる。
-fn config(root: Node<'_>) -> Result<Config, Diagnostic> {
-    root.expect("Contrast")?;
-    let mut appearance = None;
-    let mut animation = None;
-    let mut keybinds = Vec::new();
-    for child in root.children() {
-        match child.name() {
-            "Appearance" => appearance = Some(child),
-            "Animation" => animation = Some(child),
-            "Keybind" => keybinds.push((child.prop("keys")?, child.prop("action")?)),
-            other => return Err(child.error(format!("未知の要素 `<{other}>`"))),
-        }
+impl FromNode for Appearance {
+    const COMPONENT: &'static str = "Appearance";
+
+    fn from_node(node: Node<'_>) -> Result<Self, Diagnostic> {
+        Ok(Appearance {
+            gap: node.prop("gap")?,
+            radius: node.prop("radius")?,
+            // 省略できる prop は `Option<T>` で読む。
+            focus_color: node.prop("focusColor")?,
+        })
     }
-    let appearance = appearance.ok_or_else(|| root.error("`<Appearance>` が要る"))?;
-    let animation = animation.ok_or_else(|| root.error("`<Animation>` が要る"))?;
-    Ok(Config {
-        gap: appearance.prop("gap")?,
-        radius: appearance.prop("radius")?,
-        focus_color: appearance.optional_prop("focusColor")?,
-        animation: animation.prop("duration")?,
-        animation_enabled: animation.optional_prop("enabled")?.unwrap_or(true),
-        keybinds,
-    })
+}
+
+#[derive(Debug)]
+struct Animation {
+    duration: Millis,
+    enabled: bool,
+}
+
+impl FromNode for Animation {
+    const COMPONENT: &'static str = "Animation";
+
+    fn from_node(node: Node<'_>) -> Result<Self, Diagnostic> {
+        Ok(Animation {
+            duration: node.prop("duration")?,
+            enabled: node.prop::<Option<bool>>("enabled")?.unwrap_or(true),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct Keybind {
+    keys: String,
+    action: String,
+}
+
+impl FromNode for Keybind {
+    const COMPONENT: &'static str = "Keybind";
+
+    fn from_node(node: Node<'_>) -> Result<Self, Diagnostic> {
+        Ok(Keybind {
+            keys: node.prop("keys")?,
+            action: node.prop("action")?,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct Config {
+    appearance: Appearance,
+    animation: Animation,
+    keybinds: Vec<Keybind>,
+}
+
+impl FromNode for Config {
+    const COMPONENT: &'static str = "Contrast";
+
+    fn from_node(node: Node<'_>) -> Result<Self, Diagnostic> {
+        Ok(Config {
+            // 一意な子（スキーマの `unique_child`）。必須なので、なければ診断。
+            appearance: node.required_child()?,
+            animation: node.required_child()?,
+            keybinds: node.children_of()?,
+        })
+    }
 }
 
 /// ポリシーで新しいウィンドウの置き場所を決める。失敗したら既定の動作（いまのワークスペース）。
@@ -145,6 +197,38 @@ fn place(program: &Program, app_id: &str, workspace: f64) -> (f64, bool) {
             (workspace, false)
         }
     }
+}
+
+/// `per-output.cdl`（ルートが `Env` を受け取る関数）を、出力ごとの `Env` で render する。
+fn per_output() -> Result<(), ExitCode> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/contrast/per-output.cdl"
+    );
+    let schema = schema().map_err(|_| ExitCode::FAILURE)?;
+    let program = Engine::new()
+        .with_schema(schema)
+        .load(&Files, path)
+        .map_err(|d| report(&d))?;
+    for (name, scale) in [("DP-1", 2.0), ("HDMI-A-1", 1.0)] {
+        let output = Value::object([
+            ("name", Value::string(name)),
+            ("width", Value::Number(1920.0)),
+            ("height", Value::Number(1080.0)),
+            ("scale", Value::Number(scale)),
+        ]);
+        let tree = program
+            .render(&Value::object([("output", output)]))
+            .map_err(|d| report(&d))?;
+        let config = Node::new(&tree)
+            .read::<Config>()
+            .map_err(|d| report(&[d]))?;
+        println!(
+            "{name}（scale {scale}）: gap = {}px",
+            config.appearance.gap.0
+        );
+    }
+    Ok(())
 }
 
 fn report(diags: &[Diagnostic]) -> ExitCode {
@@ -183,7 +267,11 @@ fn main() -> ExitCode {
         Ok(p) => p,
         Err(diags) => return report(&diags),
     };
-    let config = match config(program.root()) {
+    let tree = match program.render(&Value::Undefined) {
+        Ok(t) => t,
+        Err(d) => return report(&d),
+    };
+    let config = match Node::new(&tree).read::<Config>() {
         Ok(c) => c,
         Err(d) => return report(&[d]),
     };
@@ -191,21 +279,30 @@ fn main() -> ExitCode {
         "読み込んだファイル: {}",
         program.files().collect::<Vec<_>>().join(", ")
     );
-    println!("gap = {}px, radius = {}px", config.gap.0, config.radius.0);
-    if let Some(Rgba([r, g, b, a])) = config.focus_color {
+    let Appearance {
+        gap,
+        radius,
+        focus_color,
+    } = &config.appearance;
+    println!("gap = {}px, radius = {}px", gap.0, radius.0);
+    if let Some(Rgba([r, g, b, a])) = focus_color {
         println!("focusColor = rgba({r}, {g}, {b}, {a})");
     }
     println!(
         "animation = {}ms（{}）",
-        config.animation.0,
-        if config.animation_enabled {
+        config.animation.duration.0,
+        if config.animation.enabled {
             "有効"
         } else {
             "無効"
         }
     );
-    for (keys, action) in &config.keybinds {
+    for Keybind { keys, action } in &config.keybinds {
         println!("keybind: {keys} → {action}");
+    }
+    // ルートが関数の形の設定は、出力（モニタ）ごとに render し直す（UI = f(env)）。
+    if let Err(code) = per_output() {
+        return code;
     }
     for app in ["firefox", "pavucontrol", "kitty"] {
         let (workspace, floating) = place(&program, app, 3.0);

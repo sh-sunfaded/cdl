@@ -1,0 +1,7 @@
+// §6 ルート: 引数の型が Env でなければ E4012。戻り値がルート要素でなければ E4001。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+export default function App({ name }: { name: string }): Element<Keybind> {
+  return <Keybind keys="a" action="b" />;
+}

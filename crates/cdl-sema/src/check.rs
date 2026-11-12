@@ -22,6 +22,10 @@ const PRELUDE_TYPES: &[&str] = &["Length", "Duration", "Color", "Element", "Arra
 const MAX_TYPE_DEPTH: u32 = 128;
 const MAX_TYPE_NODES: u32 = 4096;
 
+/// `{...x}` の中の `key` を、props として渡したときのメッセージ（DECISIONS U3）。
+const KEY_IN_SPREAD: &str =
+    "`key` は props ではないので、`{...x}` では渡せない（`key=\"…\"` と属性で書く）";
+
 const METHODS: &[&str] = &["map", "filter", "reduce", "includes", "concat"];
 
 fn is_component_name(name: &str) -> bool {
@@ -66,6 +70,10 @@ struct ChildInfo {
     names: Option<BTreeSet<String>>,
     /// 静的に 1 つの組み込みコンポーネントに定まる直接の子（DECISIONS S3）。
     single: Option<String>,
+    /// テキスト（string）の子を含む（DECISIONS R1）。
+    text: bool,
+    /// 要素の `key` が文字列リテラルのときの値（静的な重複の検査。DECISIONS U3）。
+    key: Option<String>,
     ty: Ty,
 }
 
@@ -220,6 +228,11 @@ impl<'a> Checker<'a> {
 
     fn err(&mut self, code: Code, span: Span, message: impl Into<String>) {
         let d = Diagnostic::error(code, self.span(span), message);
+        self.diags.push(d);
+    }
+
+    fn err_help(&mut self, code: Code, span: Span, message: impl Into<String>, help: &str) {
+        let d = Diagnostic::error(code, self.span(span), message).with_help(help);
         self.diags.push(d);
     }
 
@@ -576,13 +589,37 @@ impl<'a> Checker<'a> {
             if let Some(t) = &p.ty {
                 self.resolve_type_names(t, type_refs);
             }
-            self.bind_local(&p.name, locals);
+        }
+        // 既定値は引数を束縛する前に解決する（同じ関数の引数は見えない。DECISIONS R4）。
+        self.resolve_param_defaults(&f.params, locals, refs);
+        for p in &f.params {
+            for name in p.bound_names() {
+                self.bind_local(name, locals);
+            }
         }
         if let Some(t) = &f.ret {
             self.resolve_type_names(t, type_refs);
         }
         self.resolve_block(&f.body, locals, refs);
         locals.pop();
+    }
+
+    /// 引数パターンの既定値の式を解決する。
+    fn resolve_param_defaults(
+        &mut self,
+        params: &[Param],
+        locals: &mut Vec<BTreeMap<String, Span>>,
+        refs: &mut BTreeSet<String>,
+    ) {
+        for p in params {
+            if let ParamPattern::Object(props, _) = &p.pattern {
+                for pp in props {
+                    if let Some(d) = &pp.default {
+                        self.resolve_expr(d, locals, refs);
+                    }
+                }
+            }
+        }
     }
 
     fn resolve_block(
@@ -724,7 +761,12 @@ impl<'a> Checker<'a> {
                     if let Some(t) = &p.ty {
                         self.resolve_type_names(t, &mut BTreeSet::new());
                     }
-                    self.bind_local(&p.name, locals);
+                }
+                self.resolve_param_defaults(params, locals, refs);
+                for p in params {
+                    for name in p.bound_names() {
+                        self.bind_local(name, locals);
+                    }
                 }
                 if let Some(t) = ret {
                     self.resolve_type_names(t, &mut BTreeSet::new());
@@ -783,6 +825,7 @@ impl<'a> Checker<'a> {
                 Child::Element(el, _) => self.resolve_element(el, locals, refs),
                 Child::Fragment(cs, _) => self.resolve_children(cs, locals, refs),
                 Child::Expr(x, _) => self.resolve_expr(x, locals, refs),
+                Child::Text(..) => {}
             }
         }
     }
@@ -1121,8 +1164,8 @@ impl<'a> Checker<'a> {
                 None => {
                     self.err(
                         Code::AnnotationRequired,
-                        p.name.span,
-                        format!("引数 `{}` には型注釈が要る", p.name.name),
+                        param_span(p),
+                        format!("引数 {} には型注釈が要る", param_label(p)),
                     );
                     params.push(Ty::Error);
                 }
@@ -1153,6 +1196,15 @@ impl<'a> Checker<'a> {
                     Code::TypeMismatch,
                     f.params.first().map_or(f.name.span, |p| p.span),
                     "コンポーネントの props の型はオブジェクト型",
+                );
+            }
+            if let Some(Ty::Object(fields)) = params.first()
+                && fields.contains_key("key")
+            {
+                self.err(
+                    Code::UnknownProperty,
+                    f.params.first().map_or(f.name.span, |p| p.span),
+                    "`key` は props ではないので、props の型には書けない",
                 );
             }
             if !matches!(ret, Ty::Element(_) | Ty::Error) {
@@ -1269,11 +1321,86 @@ impl<'a> Checker<'a> {
         };
         let mut scope = BTreeMap::new();
         for (p, t) in f.params.iter().zip(params) {
-            scope.insert(p.name.name.clone(), t);
+            self.bind_param(p, &t, &mut scope);
         }
         self.scopes.push(scope);
         self.block(&f.body, Some(&ret), &mut Vec::new());
         self.scopes.pop();
+    }
+
+    /// 引数を束縛する。オブジェクトパターンなら、型 `ty`（オブジェクト型）の各 prop を取り出し、
+    /// 既定値を型付けする（DECISIONS R4）。既定値は、この関数の引数が見えない外側の場所で検査する。
+    fn bind_param(&mut self, p: &Param, ty: &Ty, scope: &mut BTreeMap<String, Ty>) {
+        let (props, pspan) = match &p.pattern {
+            ParamPattern::Ident(id) => {
+                scope.insert(id.name.clone(), ty.clone());
+                return;
+            }
+            ParamPattern::Object(props, span) => (props, *span),
+        };
+        let fields = match ty {
+            Ty::Object(f) => Some(f),
+            Ty::Error => None,
+            other => {
+                self.err(
+                    Code::TypeMismatch,
+                    pspan,
+                    format!("分割代入できるのはオブジェクト型（`{other}` が来ている）"),
+                );
+                None
+            }
+        };
+        let mut seen = BTreeSet::new();
+        for pp in props {
+            let name = &pp.name.name;
+            if !seen.insert(name.clone()) {
+                self.err(
+                    Code::DuplicateKey,
+                    pp.name.span,
+                    format!("分割代入の `{name}` が重複している"),
+                );
+                continue;
+            }
+            let field = fields.and_then(|f| f.get(name));
+            if fields.is_some() && field.is_none() {
+                self.err(
+                    Code::UnknownProperty,
+                    pp.name.span,
+                    format!("`{ty}` にプロパティ `{name}` はない"),
+                );
+            }
+            let bound = match (&pp.default, field) {
+                (Some(d), Some(f)) if f.optional => {
+                    let want = f.effective().without_undefined();
+                    let got = self.expr(d, Some(&want));
+                    if !assignable(&got, &want) {
+                        self.err(
+                            Code::TypeMismatch,
+                            d.span,
+                            format!("既定値の型は `{want}`（`{got}` を書いている）"),
+                        );
+                    }
+                    want
+                }
+                (Some(d), Some(_)) => {
+                    self.expr(d, None);
+                    self.err_help(
+                        Code::DefaultOnRequired,
+                        d.span,
+                        format!("`{name}` は省略可能（`?`）でないので、既定値は付けられない"),
+                        "props の型で `name?: T` と書いた prop にだけ既定値を付けられる",
+                    );
+                    Ty::Error
+                }
+                (Some(d), None) => {
+                    self.expr(d, None);
+                    Ty::Error
+                }
+                (None, Some(f)) => f.effective(),
+                (None, None) => Ty::Error,
+            };
+            scope.insert(name.clone(), bound);
+        }
     }
 
     fn check_root(&mut self) {
@@ -1298,6 +1425,10 @@ impl<'a> Checker<'a> {
         for (_, span) in iter {
             self.err(Code::RootElement, *span, "`export default` は 1 つだけ");
         }
+        if let ExprKind::Arrow { params, ret, .. } = &root.kind {
+            self.check_root_function(root, params, ret.as_ref());
+            return;
+        }
         let ty = self.expr(root, None);
         match &self.schema.root {
             Some((_, component)) if !assignable(&ty, &Ty::element(component)) => self.err(
@@ -1314,6 +1445,54 @@ impl<'a> Checker<'a> {
                 )
             }
             _ => {}
+        }
+    }
+
+    /// ルートを関数の形で書いたとき（DECISIONS U1）。引数は `Env` 1 つ（注釈必須で、型は完全一致）、
+    /// 戻り値の型の注釈は必須で、ホストが指定したルート要素。
+    fn check_root_function(&mut self, root: &Expr, params: &[Param], ret: Option<&Type>) {
+        let Some(env) = self.schema.env().cloned() else {
+            self.err_help(
+                Code::RootFunctionWithoutEnv,
+                root.span,
+                "このホストは `Env` を宣言していないので、ルートを関数の形で書けない",
+                "ルートは要素で書く（`export default (<Root>…</Root>);`）",
+            );
+            return;
+        };
+        if ret.is_none() {
+            self.err(
+                Code::AnnotationRequired,
+                root.span,
+                "ルート関数には戻り値の型注釈が要る（`: Element<…>`）",
+            );
+        }
+        let ty = self.expr(root, None);
+        let Ty::Function(ps, r) = ty else {
+            return;
+        };
+        match (params, ps.as_slice()) {
+            ([p], [t]) if *t != env && *t != Ty::Error => self.err(
+                Code::RootFunctionSignature,
+                param_span(p),
+                format!("ルート関数の引数の型は `Env`（`{env}`）。`{t}` と書いてある"),
+            ),
+            ([_], [_]) => {}
+            _ => self.err(
+                Code::RootFunctionSignature,
+                root.span,
+                format!("ルート関数の引数は `Env` 1 つ（{} 個ある）", params.len()),
+            ),
+        }
+        if let Some((_, component)) = &self.schema.root
+            && !assignable(&r, &Ty::element(component))
+            && *r != Ty::Error
+        {
+            self.err(
+                Code::RootElement,
+                ret.map_or(root.span, type_span),
+                format!("ルート関数の戻り値は `Element<{component}>`（`{r}` と書いてある）"),
+            );
         }
     }
 
@@ -1688,9 +1867,19 @@ impl<'a> Checker<'a> {
             ExprKind::Fragment(children) => {
                 let infos = self.children(children);
                 let mut names = BTreeSet::new();
+                let mut text_span = None;
+                let mut mixed_span = None;
                 for info in infos {
+                    if info.text && text_span.is_none() {
+                        text_span = Some(info.span);
+                    }
                     match info.names {
-                        Some(n) => names.extend(n),
+                        Some(n) => {
+                            if !n.is_empty() && mixed_span.is_none() {
+                                mixed_span = Some(info.span);
+                            }
+                            names.extend(n);
+                        }
                         None => self.err(
                             Code::TypeMismatch,
                             info.span,
@@ -1698,7 +1887,14 @@ impl<'a> Checker<'a> {
                         ),
                     }
                 }
-                Ty::Array(Box::new(Ty::Element(names)))
+                // テキストを含むフラグメントは `string[]`（要素もあれば `(Element<…> | string)[]`。DECISIONS U2）。
+                match (text_span, mixed_span) {
+                    (Some(_), Some(_)) => {
+                        Ty::Array(Box::new(Ty::union(vec![Ty::Element(names), Ty::String])))
+                    }
+                    (Some(_), None) => Ty::Array(Box::new(Ty::String)),
+                    (None, _) => Ty::Array(Box::new(Ty::Element(names))),
+                }
             }
         }
     }
@@ -1931,23 +2127,35 @@ impl<'a> Checker<'a> {
                     Ty::Error
                 }
             }
-            LogicalOp::And | LogicalOp::Or => {
+            LogicalOp::And => {
                 let lt = self.expr(lhs, None);
                 let facts = self.facts(lhs);
-                let frame = if op == LogicalOp::And {
-                    facts.truthy
-                } else {
-                    facts.falsy
-                };
-                self.narrowed.push(frame.into_iter().collect());
+                self.narrowed.push(facts.truthy.into_iter().collect());
+                let rt = self.expr(rhs, None);
+                self.narrowed.pop();
+                // 左辺は boolean だけ。右辺は何でもよく、式の型は `false | B`（DECISIONS R2）。
+                if !assignable(&lt, &Ty::Boolean) {
+                    self.err_help(
+                        Code::BadOperand,
+                        span,
+                        format!("`&&` の左辺は `boolean`（`{lt}` が来ている）"),
+                        "`x !== undefined && …` のように、boolean にしてから使う",
+                    );
+                    return Ty::Error;
+                }
+                Ty::union(vec![Ty::Literal(Literal::Bool(false)), rt])
+            }
+            LogicalOp::Or => {
+                let lt = self.expr(lhs, None);
+                let facts = self.facts(lhs);
+                self.narrowed.push(facts.falsy.into_iter().collect());
                 let rt = self.expr(rhs, None);
                 self.narrowed.pop();
                 if !assignable(&lt, &Ty::Boolean) || !assignable(&rt, &Ty::Boolean) {
-                    let o = if op == LogicalOp::And { "&&" } else { "||" };
                     self.err(
                         Code::BadOperand,
                         span,
-                        format!("`{o}` のオペランドは `boolean`（`{lt}` と `{rt}`）"),
+                        format!("`||` のオペランドは `boolean`（`{lt}` と `{rt}`）"),
                     );
                     return Ty::Error;
                 }
@@ -1993,8 +2201,13 @@ impl<'a> Checker<'a> {
                         ArrayElem::Expr(x) => {
                             let got = self.expr(x, Some(&t));
                             if !assignable(&got, &t) {
+                                let code = if is_slot_mismatch(&t, &got) {
+                                    Code::SlotType
+                                } else {
+                                    Code::TypeMismatch
+                                };
                                 self.err(
-                                    Code::TypeMismatch,
+                                    code,
                                     x.span,
                                     format!("`{t}` が要るところに `{got}` がある"),
                                 );
@@ -2517,9 +2730,17 @@ impl<'a> Checker<'a> {
                         }
                         t
                     }
+                    None if matches!(p.pattern, ParamPattern::Object(..)) => {
+                        self.err(
+                            Code::AnnotationRequired,
+                            param_span(p),
+                            "分割代入の引数には型注釈が要る",
+                        );
+                        Ty::Error
+                    }
                     None => want.clone(),
                 };
-                scope.insert(p.name.name.clone(), ty);
+                self.bind_param(p, &ty, &mut scope);
             }
             self.scopes.push(scope);
             let r = self.arrow_body(ret.as_ref(), body, ret_context);
@@ -2623,17 +2844,26 @@ impl<'a> Checker<'a> {
                     }
                     t
                 }
+                // 分割代入の引数は、文脈から型を推論しない（注釈が必須。DECISIONS R4）。
+                (None, Some(_)) if matches!(p.pattern, ParamPattern::Object(..)) => {
+                    self.err(
+                        Code::AnnotationRequired,
+                        param_span(p),
+                        "分割代入の引数には型注釈が要る",
+                    );
+                    Ty::Error
+                }
                 (None, Some(w)) => w.clone(),
                 (None, None) => {
                     self.err(
                         Code::AnnotationRequired,
-                        p.name.span,
-                        format!("引数 `{}` には型注釈が要る", p.name.name),
+                        param_span(p),
+                        format!("引数 {} には型注釈が要る", param_label(p)),
                     );
                     Ty::Error
                 }
             };
-            scope.insert(p.name.name.clone(), ty.clone());
+            self.bind_param(p, &ty, &mut scope);
             tys.push(ty);
         }
         self.scopes.push(scope);
@@ -2715,6 +2945,11 @@ impl<'a> Checker<'a> {
                         );
                         continue;
                     }
+                    // `key` は props ではない（DECISIONS R3）。値の型だけ検査して、props には入れない。
+                    if name.name == "key" {
+                        self.check_key(value.as_ref(), name.span);
+                        continue;
+                    }
                     let want = target.and_then(|t| t.get(&name.name)).map(Field::effective);
                     let (ty, at) = match value {
                         None => (Ty::Literal(Literal::Bool(true)), name.span),
@@ -2765,6 +3000,38 @@ impl<'a> Checker<'a> {
         out
     }
 
+    /// `key` 属性の値は string か number（DECISIONS R3）。
+    fn check_key(&mut self, value: Option<&AttrValue>, name_span: Span) {
+        let (ty, at) = match value {
+            None => (Ty::Literal(Literal::Bool(true)), name_span),
+            Some(AttrValue::String(_)) => return,
+            Some(AttrValue::Expr(x)) => (self.expr(x, None), x.span),
+        };
+        let is_number = |m: &Ty| matches!(m, Ty::Number | Ty::Literal(Literal::Number(_)));
+        let ok = ty
+            .members()
+            .iter()
+            .all(|m| matches!(m, Ty::String | Ty::Error | Ty::Literal(Literal::String(_))));
+        if ok {
+            return;
+        }
+        if ty.members().iter().any(is_number) {
+            // 移行のメッセージ（DECISIONS U3）。
+            self.err_help(
+                Code::KeyNotString,
+                at,
+                format!("`key` は string だけ（`{ty}` を渡している）"),
+                "number は、テンプレート文字列で文字列にする（`key={`${n}`}`）",
+            );
+        } else {
+            self.err(
+                Code::TypeMismatch,
+                at,
+                format!("`key` は string（`{ty}` を渡している）"),
+            );
+        }
+    }
+
     fn attr_name_span(el: &Element, name: &str, fallback: Span) -> Span {
         el.attrs
             .iter()
@@ -2781,15 +3048,21 @@ impl<'a> Checker<'a> {
             match c.props.get(k) {
                 None => {
                     let span = Self::attr_name_span(el, k, *at);
-                    self.err(
-                        Code::UnknownHostProp,
-                        span,
-                        format!("`<{}>` に props `{k}` はない", el.name.name),
-                    );
+                    let message = if k == "key" {
+                        KEY_IN_SPREAD.to_owned()
+                    } else {
+                        format!("`<{}>` に props `{k}` はない", el.name.name)
+                    };
+                    self.err(Code::UnknownHostProp, span, message);
                 }
                 Some(f) if !assignable(&p.ty, &f.effective()) => {
+                    let code = if is_slot_mismatch(&f.effective(), &p.ty) {
+                        Code::SlotType
+                    } else {
+                        Code::HostPropType
+                    };
                     self.err(
-                        Code::HostPropType,
+                        code,
                         *at,
                         format!("`{k}` は `{}`（`{}` を渡している）", f.effective(), p.ty),
                     );
@@ -2815,8 +3088,39 @@ impl<'a> Checker<'a> {
             );
         }
         let infos = self.children(&el.children);
+        // 文字列リテラルの key の重複は、評価の前に、すべて報告する（DECISIONS U3）。
+        let mut keys: BTreeMap<&str, Span> = BTreeMap::new();
+        for info in &infos {
+            let Some(key) = info.key.as_deref() else {
+                continue;
+            };
+            match keys.get(key) {
+                Some(first) => {
+                    let first = *first;
+                    self.err_label(
+                        Code::DuplicateChildKey,
+                        info.span,
+                        format!("同じ親の子に、同じ key `{key}` がある"),
+                        first,
+                        "最初の子",
+                    );
+                }
+                None => {
+                    keys.insert(key, info.span);
+                }
+            }
+        }
         let mut first_seen: BTreeMap<String, Span> = BTreeMap::new();
         for info in &infos {
+            if info.text && !c.accepts_text() {
+                self.err_help(
+                    Code::TextChildNotAccepted,
+                    info.span,
+                    format!("`<{}>` はテキスト子を受け付けない", el.name.name),
+                    "子に string を置けるのは、ホストが宣言したコンポーネントだけ",
+                );
+                continue;
+            }
             let allowed = info
                 .names
                 .as_ref()
@@ -2855,6 +3159,7 @@ impl<'a> Checker<'a> {
         };
         let mut provided = self.attrs(el, target.as_ref());
         let infos = self.children(&el.children);
+        let mut text_span: Option<Span> = None;
         if !infos.is_empty() {
             if provided.contains_key("children") {
                 self.err(
@@ -2874,12 +3179,20 @@ impl<'a> Checker<'a> {
                     ),
                 }
             }
+            text_span = infos.iter().find(|i| i.text).map(|i| i.span);
             let span = infos.first().map_or(el.name.span, |i| i.span);
+            let children_ty = match (text_span.is_some(), names.is_empty()) {
+                (true, true) => Ty::Array(Box::new(Ty::String)),
+                (true, false) => {
+                    Ty::Array(Box::new(Ty::union(vec![Ty::Element(names), Ty::String])))
+                }
+                (false, _) => Ty::Array(Box::new(Ty::Element(names))),
+            };
             provided.insert(
                 "children".to_owned(),
                 (
                     Provided {
-                        ty: Ty::Array(Box::new(Ty::Element(names))),
+                        ty: children_ty,
                         maybe_absent: false,
                     },
                     span,
@@ -2891,20 +3204,44 @@ impl<'a> Checker<'a> {
         };
         for (k, (p, at)) in &provided {
             match target.get(k) {
-                None => {
-                    let span = Self::attr_name_span(el, k, *at);
+                None if k == "children" && text_span.is_some() => {
                     self.err(
-                        Code::UnknownProperty,
-                        span,
-                        format!("`<{component}>` の props に `{k}` はない"),
+                        Code::TextChildNotAccepted,
+                        text_span.unwrap_or(*at),
+                        format!("`<{component}>` はテキスト子を受け付けない（props に `children` がない）"),
                     );
                 }
+                None => {
+                    let span = Self::attr_name_span(el, k, *at);
+                    let message = if k == "key" {
+                        KEY_IN_SPREAD.to_owned()
+                    } else {
+                        format!("`<{component}>` の props に `{k}` はない")
+                    };
+                    self.err(Code::UnknownProperty, span, message);
+                }
                 Some(fd) if !assignable(&p.ty, &fd.effective()) => {
-                    self.err(
-                        Code::TypeMismatch,
-                        *at,
-                        format!("`{k}` は `{}`（`{}` を渡している）", fd.effective(), p.ty),
-                    );
+                    if k == "children" && text_span.is_some() {
+                        self.err(
+                            Code::TextChildNotAccepted,
+                            text_span.unwrap_or(*at),
+                            format!(
+                                "`<{component}>` の `children` は `{}` で、テキスト子は置けない",
+                                fd.effective()
+                            ),
+                        );
+                    } else {
+                        let code = if k != "children" && is_slot_mismatch(&fd.effective(), &p.ty) {
+                            Code::SlotType
+                        } else {
+                            Code::TypeMismatch
+                        };
+                        self.err(
+                            code,
+                            *at,
+                            format!("`{k}` は `{}`（`{}` を渡している）", fd.effective(), p.ty),
+                        );
+                    }
                 }
                 Some(_) => {}
             }
@@ -2938,27 +3275,89 @@ impl<'a> Checker<'a> {
                         Ty::Element(names) if names.len() == 1 => names.first().cloned(),
                         _ => None,
                     };
+                    let kinds = child_kinds(&ty);
                     out.push(ChildInfo {
                         span: *span,
-                        names: child_names(&ty),
+                        names: kinds.as_ref().map(|k| k.names.clone()),
                         single,
+                        text: false,
+                        key: literal_key(el),
                         ty,
                     });
                 }
                 Child::Fragment(cs, _) => out.extend(self.children(cs)),
                 Child::Expr(x, span) => {
                     let ty = self.expr(x, None);
+                    let kinds = child_kinds(&ty);
                     out.push(ChildInfo {
                         span: *span,
-                        names: child_names(&ty),
+                        names: kinds.as_ref().map(|k| k.names.clone()),
                         single: None,
+                        text: kinds.as_ref().is_some_and(|k| k.text),
+                        key: None,
                         ty,
                     });
                 }
+                Child::Text(_, span) => out.push(ChildInfo {
+                    span: *span,
+                    names: Some(BTreeSet::new()),
+                    single: None,
+                    text: true,
+                    key: None,
+                    ty: Ty::String,
+                }),
             }
         }
         out
     }
+}
+
+fn param_span(p: &Param) -> Span {
+    match &p.pattern {
+        ParamPattern::Ident(id) => id.span,
+        ParamPattern::Object(_, span) => *span,
+    }
+}
+
+fn param_label(p: &Param) -> String {
+    match &p.pattern {
+        ParamPattern::Ident(id) => format!("`{}`", id.name),
+        ParamPattern::Object(..) => "（分割代入）".to_owned(),
+    }
+}
+
+/// 要素の `key` が文字列リテラル（`key="a"` / `key={"a"}`）なら、その値。
+fn literal_key(el: &Element) -> Option<String> {
+    el.attrs.iter().find_map(|a| match a {
+        Attr::Named {
+            name,
+            value: Some(v),
+            ..
+        } if name.name == "key" => match v {
+            AttrValue::String(s) => Some(s.value.clone()),
+            AttrValue::Expr(Expr {
+                kind: ExprKind::String(s),
+                ..
+            }) => Some(s.clone()),
+            AttrValue::Expr(_) => None,
+        },
+        _ => None,
+    })
+}
+
+/// 型に要素（`Element<…>`、またはその配列・ユニオン）が含まれるか。
+fn contains_element(t: &Ty) -> bool {
+    match t {
+        Ty::Element(_) => true,
+        Ty::Array(x) => contains_element(x),
+        Ty::Union(ms) | Ty::Tuple(ms) => ms.iter().any(contains_element),
+        _ => false,
+    }
+}
+
+/// スロット（要素を渡す props）に、型の違う要素を渡したか（DECISIONS U2）。
+fn is_slot_mismatch(want: &Ty, got: &Ty) -> bool {
+    contains_element(want) && contains_element(got)
 }
 
 /// 2 つの型を合わせる。片方がもう片方に置けるなら広いほう、そうでなければユニオン。
@@ -2974,16 +3373,43 @@ fn join(a: Ty, b: Ty) -> Ty {
     }
 }
 
-/// 子として置ける型なら、現れうる組み込みコンポーネントの集合。
-fn child_names(t: &Ty) -> Option<BTreeSet<String>> {
+/// 子に置ける型の中身。
+struct ChildKinds {
+    /// 現れうる組み込みコンポーネント。
+    names: BTreeSet<String>,
+    /// テキスト（string）が現れうる。
+    text: bool,
+}
+
+/// 子として置ける型なら、その中身。`false` と `undefined` は、どの子の位置にも置けて、
+/// 評価結果から取り除かれる（DECISIONS R2）。`true` と `boolean` は置けない。
+fn child_kinds(t: &Ty) -> Option<ChildKinds> {
+    let nothing = || {
+        Some(ChildKinds {
+            names: BTreeSet::new(),
+            text: false,
+        })
+    };
     match t {
-        Ty::Element(names) => Some(names.clone()),
-        Ty::Undefined | Ty::Error => Some(BTreeSet::new()),
-        Ty::Array(t) => child_names(t),
+        Ty::Element(names) => Some(ChildKinds {
+            names: names.clone(),
+            text: false,
+        }),
+        Ty::Undefined | Ty::Error | Ty::Literal(Literal::Bool(false)) => nothing(),
+        Ty::String | Ty::Literal(Literal::String(_)) => Some(ChildKinds {
+            names: BTreeSet::new(),
+            text: true,
+        }),
+        Ty::Array(t) => child_kinds(t),
         Ty::Tuple(ts) | Ty::Union(ts) => {
-            let mut out = BTreeSet::new();
+            let mut out = ChildKinds {
+                names: BTreeSet::new(),
+                text: false,
+            };
             for t in ts {
-                out.extend(child_names(t)?);
+                let k = child_kinds(t)?;
+                out.names.extend(k.names);
+                out.text |= k.text;
             }
             Some(out)
         }

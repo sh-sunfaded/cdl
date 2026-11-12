@@ -1,0 +1,30 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "a",
+          "action": "b"
+        },
+        "children": []
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "hello"
+        ]
+      },
+      {
+        "element": "Label",
+        "props": {},
+        "children": [
+          "from expression"
+        ]
+      }
+    ]
+  }
+}

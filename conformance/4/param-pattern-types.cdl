@@ -1,0 +1,19 @@
+// §4 型: 引数パターンの型検査（DECISIONS R4）。型注釈は必須（E3007）、既定値は省略可能でない prop に付けられない（E3015）、
+// 既定値の型は prop の型（E3001）、props にない名前は E3002、オブジェクト型でないものは分割代入できない（E3001）。
+// 既定値のない省略可能な prop は、本体で undefined のまま（E3004）。
+"use cdl 1";
+import { Contrast } from "host:contrast";
+
+interface P {
+  name: string;
+  label?: string;
+}
+
+function noAnnotation({ name }): string { return name; }
+function onRequired({ name = "x" }: P): string { return name; }
+function wrongDefault({ label = 1 }: P): string { return label; }
+function unknownName({ nope }: P): string { return "x"; }
+function notObject({ a }: string): string { return "x"; }
+function noDefault({ label }: P): string { return `${label}`; }
+
+export default (<Contrast />);

@@ -1,0 +1,22 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3017",
+      "severity": "error",
+      "span": {
+        "file": "5/key-number.cdl",
+        "start": 268,
+        "end": 269
+      }
+    },
+    {
+      "code": "E3017",
+      "severity": "error",
+      "span": {
+        "file": "5/key-number.cdl",
+        "start": 312,
+        "end": 313
+      }
+    }
+  ]
+}

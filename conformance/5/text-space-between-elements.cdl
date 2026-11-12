@@ -1,0 +1,11 @@
+// §5 JSX: 空白だけのテキストは常に捨てる（JSX の標準と違う点。DECISIONS U5）。
+// テキストを受け付けない要素（Contrast）の子の間の空白 `<A/> <B/>` が、型エラーにならない。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+export default (
+  <Contrast>
+    <Keybind keys="a" action="b" /> <Keybind keys="c" action="d" />
+    <Keybind keys="e" action="f" />   
+  </Contrast>
+);

@@ -1,0 +1,6 @@
+// §6 ルート: ルート関数の戻り値の型注釈は必須（E3007）。
+"use cdl 1";
+import { Contrast } from "host:contrast";
+import type { Env } from "host:contrast";
+
+export default (env: Env) => <Contrast />;

@@ -3,6 +3,12 @@
 //! 先に型を選び、その型を持つ式のソースを組み立てる。生成した式は、構成のしかたから
 //! 型検査を通るはずである。評価器ができたら、同じジェネレータで「型検査を通った式は、
 //! 評価で型エラーにならない」ことを確かめる（`#[path]` でこのファイルを取り込む）。
+//!
+//! `&&`（DECISIONS R2）: `boolean` どうしの `&&` / `||` は生成する（型は `boolean` のまま）。
+//! 右辺が boolean でない `c && B`（型は `false | B`）は、このジェネレータの型 [`GenTy`] に
+//! `false | B` がないので、対象外にする。代わりに、`cdl-sema/tests/check.rs`（型付け）と
+//! `cdl-eval/tests/eval.rs`（`false` の除去と短絡評価。条件の列を生成する proptest を含む）、
+//! `conformance/5/and-render` が守る。
 
 use proptest::prelude::*;
 

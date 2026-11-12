@@ -1,0 +1,22 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3014",
+      "severity": "error",
+      "span": {
+        "file": "5/text-not-accepted.cdl",
+        "start": 626,
+        "end": 630
+      }
+    },
+    {
+      "code": "E3014",
+      "severity": "error",
+      "span": {
+        "file": "5/text-not-accepted.cdl",
+        "start": 738,
+        "end": 791
+      }
+    }
+  ]
+}

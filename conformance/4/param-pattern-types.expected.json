@@ -1,0 +1,58 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3007",
+      "severity": "error",
+      "span": {
+        "file": "4/param-pattern-types.cdl",
+        "start": 549,
+        "end": 557
+      }
+    },
+    {
+      "code": "E3015",
+      "severity": "error",
+      "span": {
+        "file": "4/param-pattern-types.cdl",
+        "start": 613,
+        "end": 616
+      }
+    },
+    {
+      "code": "E3001",
+      "severity": "error",
+      "span": {
+        "file": "4/param-pattern-types.cdl",
+        "start": 680,
+        "end": 681
+      }
+    },
+    {
+      "code": "E3002",
+      "severity": "error",
+      "span": {
+        "file": "4/param-pattern-types.cdl",
+        "start": 737,
+        "end": 741
+      }
+    },
+    {
+      "code": "E3001",
+      "severity": "error",
+      "span": {
+        "file": "4/param-pattern-types.cdl",
+        "start": 791,
+        "end": 796
+      }
+    },
+    {
+      "code": "E3004",
+      "severity": "error",
+      "span": {
+        "file": "4/param-pattern-types.cdl",
+        "start": 883,
+        "end": 888
+      }
+    }
+  ]
+}

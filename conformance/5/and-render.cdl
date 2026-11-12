@@ -1,0 +1,17 @@
+// §5 JSX: 条件描画 `c && <A />`（DECISIONS R2）。左辺は boolean だけで、式の型は `false | B`。
+// `false` と `undefined` の子は、どの子の位置でも評価結果から取り除かれる。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+const on = true;
+const off = false;
+const flag: boolean = on && off;
+export default (
+  <Contrast>
+    {on && <Keybind keys="shown" action="a" />}
+    {off && <Keybind keys="hidden" action="b" />}
+    {flag && <Keybind keys="hidden" action="c" />}
+    {false}
+    {undefined}
+    {[off && <Keybind keys="in-array" action="d" />, on && <Keybind keys="in-array" action="e" />]}
+  </Contrast>
+);

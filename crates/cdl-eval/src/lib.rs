@@ -19,7 +19,7 @@ use cdl_sema::types::Ty;
 pub use cdl_sema as sema;
 
 pub use budget::{Budget, Exhausted};
-pub use value::{Element, Function, Value, conforms};
+pub use value::{ChildNode, Element, Function, Value, conforms};
 
 /// 評価の上限（SPEC 第 7・8 章。既定値は暫定）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,8 +69,23 @@ pub struct Unit<'a> {
 /// 評価の結果。`document` は不変の要素ツリー。
 #[derive(Clone, Debug)]
 pub struct Evaluated {
-    pub document: Arc<Element>,
+    /// 静的な形のルートの要素ツリー。関数の形のルートでは `None`（[`render`] で作る。DECISIONS U1）。
+    pub document: Option<Arc<Element>>,
     globals: Vec<BTreeMap<String, Value>>,
+}
+
+/// 複数の誤りを、位置順に並べた診断にする。
+fn diagnostics(units: &[Unit<'_>], entry: usize, es: Vec<eval::EvalError>) -> Vec<Diagnostic> {
+    let mut out: Vec<Diagnostic> = es
+        .into_iter()
+        .map(|e| {
+            let unit = e.unit.unwrap_or(entry);
+            let span = e.span.unwrap_or_default();
+            diagnostic(units, entry, eval::fill(e, span, unit))
+        })
+        .collect();
+    cdl_diag::sort(&mut out);
+    out
 }
 
 fn diagnostic(units: &[Unit<'_>], entry: usize, e: eval::EvalError) -> Diagnostic {
@@ -105,24 +120,96 @@ fn evaluator<'a>(
 
 /// ファイルを評価する。`units` は依存先が先に来る順で、`entry` がエントリファイル。
 /// 同じファイルは 1 回だけ評価する（SPEC 第 9 章）。誤りは最初の 1 つで打ち切る（DECISIONS D9）。
+/// ただし、見つかった `key` の重複（E4011）は、すべて報告する（DECISIONS U3）。
 pub fn evaluate(
     units: &[Unit<'_>],
     entry: usize,
     schema: &Schema,
     limits: &Limits,
-) -> Result<Evaluated, Diagnostic> {
+) -> Result<Evaluated, Vec<Diagnostic>> {
     let mut ev = evaluator(units, schema, limits, limits.max_steps);
     for (i, u) in units.iter().enumerate() {
         ev.globals(i, &u.checked.const_order)
-            .map_err(|e| diagnostic(units, entry, e))?;
+            .map_err(|e| vec![diagnostic(units, entry, e)])?;
     }
-    let document = ev
-        .document(entry)
-        .map_err(|e| diagnostic(units, entry, e))?;
+    let document = if ev.is_function_root(entry) {
+        None
+    } else {
+        Some(
+            ev.document(entry, None)
+                .map_err(|es| diagnostics(units, entry, es))?,
+        )
+    };
     Ok(Evaluated {
         document,
         globals: ev.units.into_iter().map(|u| u.globals).collect(),
     })
+}
+
+/// ルートの要素ツリーを作る。静的な形のルートは、評価済みの木をそのまま返す（`env` は無視する）。
+/// 関数の形のルートは、`env` を引数にして呼ぶ。呼び出しごとに独立したステップ予算（`max_steps`）を使い、
+/// 同じ `env` からは必ず同じ木になる（DECISIONS U1）。`env` がホストの `Env` の型に合わなければ E4014。
+pub fn render(
+    units: &[Unit<'_>],
+    entry: usize,
+    schema: &Schema,
+    evaluated: &Evaluated,
+    limits: &Limits,
+    env: &Value,
+) -> Result<Arc<Element>, Vec<Diagnostic>> {
+    if let Some(document) = &evaluated.document {
+        return Ok(Arc::clone(document));
+    }
+    let span = units
+        .get(entry)
+        .map(|u| {
+            u.module
+                .items
+                .iter()
+                .find_map(|i| match &i.kind {
+                    ItemKind::ExportDefault(e) => Some(e.span),
+                    _ => None,
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    let fail = |code: Code, message: String| {
+        vec![diagnostic(
+            units,
+            entry,
+            eval::EvalError {
+                code,
+                span: Some(span),
+                unit: Some(entry),
+                message,
+            },
+        )]
+    };
+    let Some(env_ty) = schema.env() else {
+        return Err(fail(
+            Code::EnvMismatch,
+            "このホストは `Env` を宣言していない".to_owned(),
+        ));
+    };
+    if value::depth_exceeds(value::Tree::Value(env), limits.max_value_depth, None) == Ok(true) {
+        return Err(fail(
+            Code::ValueDepth,
+            format!("`Env` の値の深さが上限 {} を超えた", limits.max_value_depth),
+        ));
+    }
+    if !conforms(env, env_ty) {
+        return Err(fail(
+            Code::EnvMismatch,
+            format!("`Env` の値が `{env_ty}` に合わない"),
+        ));
+    }
+    let mut ev = evaluator(units, schema, limits, limits.max_steps);
+    for (state, globals) in ev.units.iter_mut().zip(&evaluated.globals) {
+        state.globals = globals.clone();
+    }
+    ev.reset_budget(limits.max_steps);
+    ev.document(entry, Some(env.clone()))
+        .map_err(|es| diagnostics(units, entry, es))
 }
 
 /// `export const policy` の名前の位置。

@@ -1,0 +1,10 @@
+// §6 ルート: アロー関数でも書ける。引数は名前つきでもよい（DECISIONS U1）。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+import type { Env } from "host:contrast";
+
+export default (env: Env): Element<Contrast> => (
+  <Contrast>
+    <Keybind keys="a" action={env.output.name} />
+  </Contrast>
+);

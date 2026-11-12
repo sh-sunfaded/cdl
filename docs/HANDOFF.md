@@ -19,7 +19,7 @@
 | 名前 | 役割 |
 | --- | --- |
 | `Engine` | 処理系。`Engine::new().with_schema(s).with_limits(l)`。`load(&dyn ModuleResolver, entry) -> Result<Program, Vec<Diagnostic>>`、`check`、`check_until(…, Stage)` |
-| `Program` | 評価済みの不変な結果。`root() -> Node`、`document() -> &Element`、`files()`、`call_hook(hook, Value) -> Result<Option<Value>, Diagnostic>`。`Send + Sync`（テスト `program_is_send_and_sync`） |
+| `Program` | 評価済みの不変な結果。`render(&Value)`（2026-11-12 から。ルートが関数の形のとき）、`root() -> Option<Node>`、`document() -> Option<&Element>`、`files()`、`call_hook(hook, Value) -> Result<Option<Value>, Diagnostic>`。`Send + Sync`（テスト `program_is_send_and_sync`） |
 | `ModuleResolver` | ソースを読む唯一の経路（trait） |
 | `Source { id, text }` | リゾルバが返すソース |
 | `Limits` | リソース上限（`Default` あり） |
@@ -27,35 +27,55 @@
 | `Schema` / `SchemaBuilder` / `ComponentDef` | スキーマ（cdl-sema からの再公開） |
 | `Ty` / `Field` | 型の記述（props・ホストの型用） |
 | `Value` / `Element` | 値木（cdl-eval からの再公開） |
-| `Node` / `FromValue` / `Px` / `Millis` / `Rgba` | 値木を Rust の型で読む参照 API（`convert.rs`）。`derive` はない |
+| `Node` / `FromNode` / `FromValue` / `Px` / `Millis` / `Rgba` | 値木を Rust の型で読む API（`convert.rs`）。`derive` はない。下の「安定させる面」を参照 |
 | `Diagnostic` / `diag` | 診断（`cdl-diag` の再公開） |
 
-最小の使用例（`examples/contrast.rs` の `main` と `config` から。省略あり）:
+最小の使用例（`examples/contrast.rs` から。省略あり。2026-11-12 に新 API に書き直した）:
 
 ```rust
 let program = Engine::new().with_schema(schema).load(&Files, &entry)?; // Err は Vec<Diagnostic>
-let root = program.root();
-root.expect("Contrast")?;
-for child in root.children() {
-    if child.name() == "Keybind" {
-        let keys: String = child.prop("keys")?;          // 必須。ないか型違いなら E4008
-        let c: Option<Rgba> = child.optional_prop("focusColor")?;
+let tree = program.render(&Value::Undefined)?;   // 静的な形のルートなら Env は無視される
+let config: Config = Node::new(&tree).read()?;   // Config: FromNode（手書き）。失敗は位置つきの E4008
+
+impl FromNode for Appearance {
+    const COMPONENT: &'static str = "Appearance";
+    fn from_node(node: Node<'_>) -> Result<Self, Diagnostic> {
+        Ok(Appearance { gap: node.prop("gap")?, focus_color: node.prop("focusColor")? /* Option<Rgba> */ })
     }
 }
 ```
+
+### 安定させる面（`cdl-host`。DECISIONS U4）
+
+互換性（semver）を約束する面。仕様が `0.x` のあいだは、次の形を「最終形の候補」として固め、変えるときは破壊的変更として DECISIONS に記録する。
+
+| 名前 | 署名・役割 |
+| --- | --- |
+| `Engine` | `new() / with_schema(Schema) / with_limits(Limits)`、`load(&dyn ModuleResolver, &str) -> Result<Program, Vec<Diagnostic>>`、`check`、`check_until(…, Stage)` |
+| `Program` | `render(&Value) -> Result<Arc<Element>, Vec<Diagnostic>>`（`Env` から木を作る。何度でも・複数スレッドから。静的な形のルートでは `Env` を無視）、`is_function_root() -> bool`、`root() -> Option<Node>` / `document() -> Option<&Element>`（静的な形のルートだけ）、`files()`、`call_hook(&str, Value) -> Result<Option<Value>, Diagnostic>`。`Send + Sync` |
+| `Schema` / `SchemaBuilder` / `ComponentDef` | `root(module, name)`、`env(module, Ty)`（`Env` の宣言）、`component(module, def)`、`type_def(module, name, Ty)`、`build()`。`ComponentDef`: `prop` / `optional_prop` / `children` / `unique_child` / `text_children` |
+| `Value` | 値（`Undefined / Bool / Number / String / Length / Duration / Color / Array / Object / Element / Function`） |
+| `Element` | 評価結果のノードの実体: `name`・`props`・`key: Option<String>`・`children: Vec<ChildNode>`・`span`・`expanded_from` |
+| `ChildNode` | `Element(Arc<Element>)` / `Text(Arc<str>)`（`as_element()` / `as_text()`） |
+| `Node<'a>`（読み出しの入口） | `component() -> &str`、`key() -> Option<&str>`、`props() -> &BTreeMap<String, Value>`、`span() -> &Span`、`expanded_from()`、`children()`（要素だけ）、`child_nodes() -> Child`（`Child::Element(Node)` / `Child::Text(&str)`）、`children_named(&str)`、`children_of::<T: FromNode>()`、`unique_child::<T>()` / `required_child::<T>()`、`read::<T>()`、`prop::<T: FromValue>(&str)`、`slot(&str)` / `slots(&str)` / `slot_as::<T>(&str)`、`expect_component(&str)`、`error(msg)` |
+| `FromValue` | props の値から読む trait（`expected() -> String`、`from_value(&Value) -> Option<Self>`）。標準で `String` / `f64` / `bool` / `Px` / `Millis` / `Rgba` / `Option<T>` / `Vec<T>` |
+| `FromNode` | 1 ノードから読む trait（`const COMPONENT`、`from_node(Node) -> Result<Self, Diagnostic>`）。derive はなく、手で書く（`examples/contrast.rs`） |
+| `ModuleResolver` / `Source` / `Limits` / `Stage` / `Ty` / `Field` / `Diagnostic` / `diag` | 従来どおり |
+
+読み出しの失敗は、要素の位置つきの診断（E4008）。省略できる prop は `Option<T>` で読む。
 
 ### 2.2 Schema ビルダー（`crates/cdl-sema/src/schema.rs`、DECISIONS E1）
 
 スキーマは Rust 側のビルダーでだけ登録する（CDL 内の `declare` はない）。`examples/contrast.rs` の `schema()` が実例。
 
 - `Schema::builder().root(module, "Contrast")` — ルート要素。`module` は `"host:contrast"` のように、CDL から `import … from "host:contrast"` する名前。
-- `.component(module, ComponentDef::new("Name"))` — 組み込みコンポーネント。`ComponentDef` のメソッドは `prop(name, Ty)`（必須）・`optional_prop(name, Ty)`・`children(&["A","B"])`・`unique_child("A")` の 4 つ。
+- `.component(module, ComponentDef::new("Name"))` — 組み込みコンポーネント。`ComponentDef` のメソッドは `prop(name, Ty)`（必須）・`optional_prop(name, Ty)`・`children(&["A","B"])`・`unique_child("A")`・`text_children()`（テキスト子を受け付ける）の 5 つ。ホストの環境は `Schema::builder().env(module, Ty)`（ルートを関数の形で書けるようにする。DECISIONS U1）。
 - `.type_def(module, "Policy", Ty)` — ホストの型。`Policy` はフックの集合で、フックは `Field::optional(Ty::Function(引数の型の Vec, Box<戻り値の型>))`。
 - `.build() -> Result<Schema, Vec<String>>` — 誤りはここでまとめて返る。検査される内容（確認済み）: コンポーネント名は大文字で始める、props に関数型を使わない（B9）、名前の重複、子が同じモジュールにある、一意な子が子の一覧にある、ルートが存在する。
 - 子に許す要素は、コンポーネント**名**の集合で指定する（同じモジュールのものだけ）。
 - 一意子 `unique_child` は「その親の子の中に 1 つまで」。静的にわかる子は意味解析で、`map` などが作る子は評価後に E4006 になる（S3・E2）。
 - 型を作る関数: `Ty::object([(name, Field::required(ty))…])`、`Ty::element(name)`、`Ty::union`、`Ty::Length` / `Duration` / `Color` / `String` / `Number` / `Boolean` など。
-- **「識別 prop」に当たる機能はない**（`grep` で確認。DECISIONS C4: `key` は入れず、ホストは位置で差分を取る）。
+- **「識別 prop」に当たる機能はない**（`grep` で確認。DECISIONS C4: `key` は入れず、ホストは位置で差分を取る。**2026-11-12 に改訂**: `key` を許可した。ホストの同一性は key → 識別 prop → 親・位置の順。DECISIONS R3）。
 
 ### 2.3 ModuleResolver の実装
 
@@ -117,9 +137,9 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 ## 3. 言語の要点（間違えやすい点）
 
 - 先頭は `"use cdl 1";`。すべてのファイルに必須。形は厳密（C8）。末尾の `;` も必須（E1002）。
-- 禁止（診断になる）: `let` `var` `class` `new` `this` `null` `for` `while` `try` `async` `enum` `as`、Hooks（`use` + 大文字）、`on` + 大文字のイベント属性、`ref`、`key`、分割代入、rest 引数、JSX のテキスト子、`c && <A />`（`conformance/forbidden/` に 19 件）。そのほか C1・C17 に一覧がある（関数呼び出しのスプレッド、ブロック内の関数宣言、`**`、ビット演算など）。
-- **JSX のテキスト子は書けない**。`<Label>text</Label>` ではなく `<Label>{"text"}</Label>`（A1）。
-- **`key` はない**（C4）。**条件描画は `c ? <A /> : undefined` だけ**（A2）。`if` / `?:` の条件は boolean だけ（S2）。`else` なしの `if` は書けない（A4）。
+- 禁止（診断になる）: `let` `var` `class` `new` `this` `null` `for` `while` `try` `async` `enum` `as`、Hooks（`use` + 大文字）、`on` + 大文字のイベント属性、`ref`、`key`、分割代入、rest 引数、JSX のテキスト子、`c && <A />`（`conformance/forbidden/` に 19 件）。**2026-11-12 に改訂**: `key`・テキスト子・`c && <A />` は許可になり、引数の 1 階層の分割代入も許可（DECISIONS R1–R4）。`conformance/forbidden/` は 18 件（`and-nonboolean` を追加）。そのほか C1・C17 に一覧がある（関数呼び出しのスプレッド、ブロック内の関数宣言、`**`、ビット演算など）。
+- ~~JSX のテキスト子は書けない~~（A1。**2026-11-12 に改訂**: 子に string を受け付けるコンポーネントにだけ書ける。R1）。
+- ~~`key` はない~~（C4）・~~条件描画は `c ? <A /> : undefined` だけ~~（A2）。**2026-11-12 に改訂**: どちらも許可（R2・R3）。`if` / `?:` の条件は boolean だけ（S2）。`else` なしの `if` は書けない（A4）。
 - 単位つきの値は関数で作る: `px(8)` `ms(120)` `sec(…)` `color("#89b4fa")`（`8px` のリテラルはない。G1）。Length ÷ Length はできない。比較は同じ単位どうし（B11）。`color()` の書式の誤りは評価時の E5010（B12）。
 - 数値は `number`（binary64）だけ。`NaN` / `±Infinity` を生む演算と 0 除算は E5。`-0` は `+0` に正規化（D2）。
 - 子の型付け: `Element<A | B>[]`。コンポーネントの戻り値は `Element<…>` に限る（フラグメント・`undefined` は返せない）。children は平坦化・`undefined` 除去済みの配列で渡る。`children` 属性と JSX の子の併記は E3012（B5・B6）。

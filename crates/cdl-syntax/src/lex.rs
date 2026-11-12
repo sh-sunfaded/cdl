@@ -667,7 +667,12 @@ impl<'a> Lexer<'a> {
                 self.expr_start = true;
                 self.open(FrameKind::Brace);
             }
-            // テキスト子は CDL では誤り（DECISIONS A1）。JSX に見えて実はコードだった場合に
+            // `,` と `;` は連鎖を数え直す（普通の文章が上限に当たらないように。DECISIONS R1）。
+            b',' | b';' => {
+                self.nesting.reset();
+                self.advance(1);
+            }
+            // テキスト子は文章だが、`<T extends U>(…)` のように JSX に見えて実はコードだった場合に
             // 備えて、テキストの記号は連鎖として数える。
             b if b.is_ascii_punctuation() => {
                 let r = self.nesting.inc();

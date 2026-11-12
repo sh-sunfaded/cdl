@@ -1,0 +1,8 @@
+// §6 ルート: ルート関数の引数は `Env` 1 つ（E4012）。
+"use cdl 1";
+import { Contrast } from "host:contrast";
+import type { Env } from "host:contrast";
+
+export default function App(a: Env, b: Env): Element<Contrast> {
+  return <Contrast />;
+}

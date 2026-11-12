@@ -20,8 +20,8 @@ pub use cdl_diag as diag;
 pub use cdl_diag::Diagnostic;
 pub use cdl_eval::sema::schema::{ComponentDef, Schema, SchemaBuilder};
 pub use cdl_eval::sema::types::{Field, Ty};
-pub use cdl_eval::{Element, Value};
-pub use convert::{FromValue, Millis, Node, Px, Rgba};
+pub use cdl_eval::{ChildNode, Element, Value};
+pub use convert::{Child, FromNode, FromValue, Millis, Node, Px, Rgba};
 
 /// リゾルバが返すソース。`id` は正準な名前で、同じファイルなら同じ `id` を返す（DECISIONS E6）。
 /// 診断の `file` には `id` が入る。
@@ -184,14 +184,36 @@ pub struct Program {
 }
 
 impl Program {
-    /// ルート要素（コンポーネントはすべて展開済み）。
-    pub fn document(&self) -> &Element {
-        &self.evaluated.document
+    /// 静的な形のルートの要素ツリー（コンポーネントはすべて展開済み）。
+    /// ルートが関数の形のときは `None`（[`Program::render`] を使う）。
+    pub fn document(&self) -> Option<&Element> {
+        self.evaluated.document.as_deref()
     }
 
-    /// ルート要素を、値を読み出すための [`Node`] として返す。
-    pub fn root(&self) -> Node<'_> {
-        Node::new(&self.evaluated.document)
+    /// 静的な形のルートを、値を読み出すための [`Node`] として返す。関数の形のルートでは `None`。
+    pub fn root(&self) -> Option<Node<'_>> {
+        self.document().map(Node::new)
+    }
+
+    /// ルートが関数の形（`export default function App(env: Env): Element<…>`）か。
+    pub fn is_function_root(&self) -> bool {
+        self.evaluated.document.is_none()
+    }
+
+    /// ホストの環境 `env`（`Value::Object`。型は、スキーマの `Env`）から、要素ツリーを作る（DECISIONS U1）。
+    /// 評価は純粋で、同じ `env` からは必ず同じ木になる。呼び出しごとに独立したステップ予算を使うので、
+    /// 1 つの `Program` を何度でも（複数のスレッドから）render できる。
+    /// 静的な形のルートでは、`env` は無視する。`env` が `Env` の型に合わなければ E4014。
+    /// 誤りは複数返りうる（見つかった `key` の重複はすべて。DECISIONS U3）。
+    pub fn render(&self, env: &Value) -> Result<std::sync::Arc<Element>, Vec<Diagnostic>> {
+        cdl_eval::render(
+            &self.units(),
+            self.entry,
+            &self.schema,
+            &self.evaluated,
+            &self.limits,
+            env,
+        )
     }
 
     /// 読み込んだファイルの `id`（依存先が先）。

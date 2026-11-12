@@ -1,0 +1,12 @@
+// §5 JSX: テキストだけのフラグメントの型は `string[]`。テキスト子を受け付けるコンポーネントの子に置ける（DECISIONS R1）。
+"use cdl 1";
+import { Contrast, Label } from "host:contrast";
+
+const t = <>one two</>;
+
+export default (
+  <Contrast>
+    <Label>{t}</Label>
+    <Label><>fragment text</></Label>
+  </Contrast>
+);

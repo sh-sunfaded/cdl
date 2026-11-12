@@ -1,0 +1,22 @@
+{
+  "diagnostics": [
+    {
+      "code": "E4012",
+      "severity": "error",
+      "span": {
+        "file": "6/root-function-wrong-type.cdl",
+        "start": 207,
+        "end": 215
+      }
+    },
+    {
+      "code": "E4001",
+      "severity": "error",
+      "span": {
+        "file": "6/root-function-wrong-type.cdl",
+        "start": 236,
+        "end": 252
+      }
+    }
+  ]
+}

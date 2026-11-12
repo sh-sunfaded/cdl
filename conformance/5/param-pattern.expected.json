@@ -1,0 +1,56 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "a",
+          "action": "runx1"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "b",
+          "action": "gox3"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "c",
+          "action": "runx1"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "sum3",
+          "action": "6"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "m1",
+          "action": "m"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "m2",
+          "action": "m"
+        },
+        "children": []
+      }
+    ]
+  }
+}

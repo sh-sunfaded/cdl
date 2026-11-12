@@ -1,0 +1,8 @@
+// §5 書けない構文: 引数パターンは 1 階層で、別名・入れ子・rest・配列パターン・既定の引数は E1005（DECISIONS R4）。
+"use cdl 1";
+
+function Alias({ a: x }: { a: number }): number { return x; }
+function Nested({ a: { b } }: { a: { b: number } }): number { return b; }
+function Rest({ ...others }: { a: number }): number { return 1; }
+function Array([first]: number[]): number { return 1; }
+function Initializer({ a }: { a: number } = { a: 1 }): number { return a; }

@@ -1,0 +1,31 @@
+{
+  "diagnostics": [
+    {
+      "code": "E3002",
+      "severity": "error",
+      "span": {
+        "file": "5/key-not-prop.cdl",
+        "start": 301,
+        "end": 304
+      }
+    },
+    {
+      "code": "E3002",
+      "severity": "error",
+      "span": {
+        "file": "5/key-not-prop.cdl",
+        "start": 351,
+        "end": 373
+      }
+    },
+    {
+      "code": "E4003",
+      "severity": "error",
+      "span": {
+        "file": "5/key-not-prop.cdl",
+        "start": 535,
+        "end": 557
+      }
+    }
+  ]
+}

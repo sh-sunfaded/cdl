@@ -1,0 +1,69 @@
+{
+  "value": {
+    "element": "Contrast",
+    "props": {},
+    "children": [
+      {
+        "element": "Keybind",
+        "key": "str",
+        "props": {
+          "keys": "a",
+          "action": "b"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "key": "1",
+        "props": {
+          "keys": "a",
+          "action": "c"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "key": "1.5",
+        "props": {
+          "keys": "a",
+          "action": "d"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "key": "k-x",
+        "props": {
+          "keys": "x",
+          "action": "e"
+        },
+        "children": []
+      },
+      {
+        "element": "Keybind",
+        "key": "k-y",
+        "props": {
+          "keys": "y",
+          "action": "e"
+        },
+        "children": []
+      },
+      {
+        "element": "Label",
+        "key": "label",
+        "props": {},
+        "children": [
+          "text"
+        ]
+      },
+      {
+        "element": "Keybind",
+        "props": {
+          "keys": "no-key",
+          "action": "f"
+        },
+        "children": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+// §5 式: `&&` の左辺は boolean だけ。number を左辺にすると E3006（DECISIONS R2）。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+const n: number = 1;
+export default (<Contrast>{n && <Keybind keys="a" action="b" />}</Contrast>);

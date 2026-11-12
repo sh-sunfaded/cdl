@@ -1,0 +1,18 @@
+// §4 型: `&&` の左辺は boolean だけ。number / string / undefined を含む型は E3006（DECISIONS R2）。
+// 右辺はどんな型でもよい。`||` は両辺とも boolean。
+"use cdl 1";
+import { Contrast, Keybind } from "host:contrast";
+
+const n: number = 1;
+const s: string = "a";
+const maybe: boolean | undefined = undefined;
+
+export default (
+  <Contrast>
+    {n && <Keybind keys="a" action="b" />}
+    {s && <Keybind keys="a" action="b" />}
+    {maybe && <Keybind keys="a" action="b" />}
+    {n || true}
+    {true || <Keybind keys="a" action="b" />}
+  </Contrast>
+);
