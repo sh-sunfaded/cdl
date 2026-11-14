@@ -148,7 +148,9 @@ fn conversion_failures_are_diagnostics_at_the_element() {
     let item = program.root().unwrap().children().next().unwrap();
     let wrong = item.prop::<f64>("size").unwrap_err();
     assert_eq!(wrong.code, Code::ConversionFailed);
-    assert_eq!(wrong.span, *item.span());
+    // 型違いの prop は prop の位置（DECISIONS P1。0.2.0 で要素の位置から変わった）。
+    assert_eq!(Some(wrong.span.clone()), item.prop_span("size"));
+    assert!(wrong.span.start >= item.span().start && wrong.span.end <= item.span().end);
     assert_eq!(wrong.span.file, "main.cdl");
     let missing = program
         .root()

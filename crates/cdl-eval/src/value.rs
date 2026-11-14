@@ -30,12 +30,22 @@ pub enum Value {
     Function(Function),
 }
 
+/// ソース上のバイト範囲（ファイルは、それを含む要素の `span.file`）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ByteRange {
+    pub start: u32,
+    pub end: u32,
+}
+
 /// 要素ツリーの 1 ノード。コンポーネントはすべて展開済みで、組み込みコンポーネントだけが残る。
 #[derive(Clone, Debug, PartialEq)]
 pub struct Element {
     pub name: String,
     /// 値が `undefined` の props は持たない（DECISIONS B7）。
     pub props: BTreeMap<String, Value>,
+    /// `props` の各キーの位置（属性の名前から値まで。`{...x}` から来た prop は、そのスプレッド属性全体）。
+    /// `props` にあるキーだけを持つ（DECISIONS P1）。
+    pub prop_spans: BTreeMap<String, ByteRange>,
     /// `key` 属性の値（number は文字列にしたもの）。props ではない（DECISIONS R3）。
     pub key: Option<String>,
     /// 子。要素かテキスト（`false` と `undefined` は取り除いてある。DECISIONS R1・R2）。

@@ -204,18 +204,20 @@ fn missing_and_duplicate_children() {
 }
 
 #[test]
-fn failures_are_diagnostics_at_the_element() {
+fn failures_are_diagnostics_at_the_prop_or_the_element() {
     let t = tree("export default (<Root><Row name=\"a\" /></Root>);");
     let row = Node::new(&t).children().next().unwrap();
-    // 型が違う・必須なのにない・prop 名の誤り。
-    for err in [
-        row.prop::<f64>("name").unwrap_err(),
-        row.prop::<String>("weight").unwrap_err(),
-        row.prop::<Vec<String>>("name").unwrap_err(),
+    // 型が違う: prop の位置（DECISIONS P1）。ない prop を必須で読む: 要素の位置。
+    for (err, key) in [
+        (row.prop::<f64>("name").unwrap_err(), "name"),
+        (row.prop::<Vec<String>>("name").unwrap_err(), "name"),
     ] {
         assert_eq!(err.code, Code::ConversionFailed);
-        assert_eq!(err.span, *row.span());
+        assert_eq!(Some(err.span), row.prop_span(key));
     }
+    let missing = row.prop::<String>("weight").unwrap_err();
+    assert_eq!(missing.code, Code::ConversionFailed);
+    assert_eq!(missing.span, *row.span());
     assert!(
         row.prop::<f64>("name")
             .unwrap_err()

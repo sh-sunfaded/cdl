@@ -20,7 +20,7 @@ pub use cdl_diag as diag;
 pub use cdl_diag::Diagnostic;
 pub use cdl_eval::sema::schema::{ComponentDef, Schema, SchemaBuilder};
 pub use cdl_eval::sema::types::{Field, Literal, Ty};
-pub use cdl_eval::{ChildNode, Element, Value};
+pub use cdl_eval::{ByteRange, ChildNode, Element, Value};
 pub use convert::{Child, FromNode, FromValue, Millis, Node, Px, Rgba};
 
 /// リゾルバが返すソース。`id` は正準な名前で、同じファイルなら同じ `id` を返す（DECISIONS E6）。

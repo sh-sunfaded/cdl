@@ -277,17 +277,39 @@ impl<'a> Node<'a> {
         Diagnostic::error(Code::ConversionFailed, self.element.span.clone(), message)
     }
 
+    /// prop `key` の位置（属性の名前から値まで。`{...x}` から来た prop は、そのスプレッド属性全体。
+    /// ファイルは要素と同じ）。prop がない（`undefined` を含む）ときは `None`（DECISIONS P1）。
+    pub fn prop_span(&self, key: &str) -> Option<Span> {
+        let r = self.element.prop_spans.get(key)?;
+        Some(Span {
+            file: self.element.span.file.clone(),
+            start: r.start,
+            end: r.end,
+        })
+    }
+
+    /// prop `key` の位置で E4008 を作る。prop の位置がなければ、この要素の位置（[`Node::error`]）。
+    pub fn prop_error(&self, key: &str, message: impl Into<String>) -> Diagnostic {
+        match self.prop_span(key) {
+            Some(span) => Diagnostic::error(Code::ConversionFailed, span, message),
+            None => self.error(message),
+        }
+    }
+
     /// props を読む。ない prop は `undefined` として扱うので、省略できる prop は `Option<T>` で読む。
     /// 型が合わない・必須なのにない場合は E4008。
     pub fn prop<T: FromValue>(&self, key: &str) -> Result<T, Diagnostic> {
         let v = self.element.props.get(key).unwrap_or(&Value::Undefined);
         T::from_value(v).ok_or_else(|| {
-            self.error(format!(
-                "`<{}>` の `{key}` は `{}` が要る（{}）",
-                self.component(),
-                T::expected(),
-                kind(v)
-            ))
+            self.prop_error(
+                key,
+                format!(
+                    "`<{}>` の `{key}` は `{}` が要る（{}）",
+                    self.component(),
+                    T::expected(),
+                    kind(v)
+                ),
+            )
         })
     }
 
@@ -297,11 +319,14 @@ impl<'a> Node<'a> {
         match self.element.props.get(key) {
             None | Some(Value::Undefined) => Ok(None),
             Some(Value::Element(e)) => Ok(Some(Node::new(e))),
-            Some(v) => Err(self.error(format!(
-                "`<{}>` の `{key}` は要素が要る（{}）",
-                self.component(),
-                kind(v)
-            ))),
+            Some(v) => Err(self.prop_error(
+                key,
+                format!(
+                    "`<{}>` の `{key}` は要素が要る（{}）",
+                    self.component(),
+                    kind(v)
+                ),
+            )),
         }
     }
 
@@ -314,18 +339,24 @@ impl<'a> Node<'a> {
                 .iter()
                 .map(|x| match x {
                     Value::Element(e) => Ok(Node::new(e)),
-                    v => Err(self.error(format!(
-                        "`<{}>` の `{key}` の要素は要素が要る（{}）",
-                        self.component(),
-                        kind(v)
-                    ))),
+                    v => Err(self.prop_error(
+                        key,
+                        format!(
+                            "`<{}>` の `{key}` の要素は要素が要る（{}）",
+                            self.component(),
+                            kind(v)
+                        ),
+                    )),
                 })
                 .collect(),
-            Some(v) => Err(self.error(format!(
-                "`<{}>` の `{key}` は要素の配列が要る（{}）",
-                self.component(),
-                kind(v)
-            ))),
+            Some(v) => Err(self.prop_error(
+                key,
+                format!(
+                    "`<{}>` の `{key}` は要素の配列が要る（{}）",
+                    self.component(),
+                    kind(v)
+                ),
+            )),
         }
     }
 

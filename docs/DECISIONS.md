@@ -639,3 +639,13 @@ React の宣言的 UI に近づけるため、これまで禁止していた 3 �
 - 動作: 範囲外の値は、props なら E4004（メッセージに型のユニオンが出る）、`Env` なら E4014。`string` 型の値はリテラルのユニオンに入らない。
 - 理由: Contrast が 5 つの prop を `string` + 自前検査で回避していて、`Env` の型（列挙）も書けないため。追加だけで、既存の `.cdl` と API を壊さない。
 - Contrast への影響: 列挙の prop を `Literal` のユニオンに置き換えられる。置き換えると、その検査の診断が Contrast 独自のコードから CDL の E4004 に変わる。
+
+### P1 要素の props ごとの位置（E4008 の位置を prop にする）
+- 変更前: 値木の `Element` は、要素の位置（`span`）と展開元（`expanded_from`）だけを持った。ホストの変換の誤り（E4008）は、誤りのある prop を含む**要素**の位置で報告された。静的検査（E4003・E4004）は、すでに prop の位置を指していた。
+- 変更後:
+  - `Element` に `prop_spans: BTreeMap<String, ByteRange>` を足す（`ByteRange { start, end }` は、ファイルを持たないバイト範囲。ファイルは要素の `span.file` と同じ）。`props` にあるキーだけを持つ（値が `undefined` で取り除かれた prop は持たない）。位置は、属性の名前から値まで（`n={5}`、`tag="x"`）。`{...x}` から来た prop は、そのスプレッド属性全体（`{...x}`）。あとに書いたものが勝つので、位置も勝ったほうになる（`undefined` のフィールドのスプレッドは位置も上書きしない）。コンポーネントの展開後の要素では、コンポーネントの本体の中のその要素の属性の位置になる。
+  - `cdl-host`: `Node::prop_span(key) -> Option<Span>`（ファイルつき）と `Node::prop_error(key, message) -> Diagnostic`（E4008。prop の位置がなければ要素の位置）を足す。`Node::prop::<T>` / `slot` / `slots` の失敗の E4008 の位置は、要素から prop の位置に変わる（prop の位置がない = その prop がない、のときは要素の位置のまま）。`ByteRange` を再公開する。
+  - `Value` の型、値木の JSON（span を比べない。SPEC 第 12 章）、診断コードの意味は変えない。
+- メモリと上限: `prop_spans` のエントリ数は `props` 以下で、`props` の値は値木のノード数の上限（`Limits::max_nodes`）に数えられる。したがって `prop_spans` の総数も上限の定数倍に収まる。値木の深さ・ノード数の数え方は変えない（位置は数えない。`span` と同じ扱い）。1 エントリはキーの `String` と 8 バイトの範囲。
+- 理由: Contrast の `Tiers`・`Motion`・`Layout` の範囲検査などが、要素単位の位置しか指せず、メッセージの prop 名に頼っていたため。
+- Contrast への影響: E4008 の位置が prop になる。`Element` を構造体リテラルで作っていると、フィールドが足りずコンパイルできない（Contrast の `contrast-policy-cdl/src` では見つからなかった。C3 の調査）。

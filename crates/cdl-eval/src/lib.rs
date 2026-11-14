@@ -19,7 +19,7 @@ use cdl_sema::types::Ty;
 pub use cdl_sema as sema;
 
 pub use budget::{Budget, Exhausted};
-pub use value::{ChildNode, Element, Function, Value, conforms};
+pub use value::{ByteRange, ChildNode, Element, Function, Value, conforms};
 
 /// 評価の上限（SPEC 第 7・8 章。既定値は暫定）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

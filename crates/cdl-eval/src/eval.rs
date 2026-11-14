@@ -14,7 +14,9 @@ use crate::Limits;
 use crate::budget::Budget;
 use crate::num::{self, f64_to_i64, js_number_string, normalize};
 use crate::value::Element as Node;
-use crate::value::{ChildNode, FnRepr, Function, Scope, Tree, Value, count_nodes, depth_exceeds};
+use crate::value::{
+    ByteRange, ChildNode, FnRepr, Function, Scope, Tree, Value, count_nodes, depth_exceeds,
+};
 
 /// 評価の誤り。`span` が `None` なら、評価していたトップレベルの宣言の位置にする（DECISIONS D8）。
 #[derive(Clone, Debug, PartialEq)]
@@ -963,12 +965,9 @@ impl<'a> Evaluator<'a> {
     // ---- JSX -----------------------------------------------------------------
 
     /// props と `key`（props ではない。DECISIONS R3）を評価する。
-    fn props(
-        &mut self,
-        el: &'a Element,
-        scope: &Arc<Scope>,
-    ) -> R<(BTreeMap<String, Value>, Option<String>)> {
+    fn props(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<(Props, Option<String>)> {
         let mut map = BTreeMap::new();
+        let mut spans: BTreeMap<String, ByteRange> = BTreeMap::new();
         let mut key = None;
         for a in &el.attrs {
             match a {
@@ -993,17 +992,29 @@ impl<'a> Evaluator<'a> {
                         Some(AttrValue::Expr(x)) => self.expr(x, scope)?,
                     };
                     set_field(&mut map, &name.name, v);
+                    // 値が `undefined` で取り除かれた prop は、位置も持たない。
+                    if map.contains_key(&name.name) {
+                        spans.insert(name.name.clone(), range(*span));
+                    } else {
+                        spans.remove(&name.name);
+                    }
                 }
                 Attr::Spread(x, s) => match self.expr(x, scope)? {
                     Value::Object(m) => {
                         self.charge(u64::try_from(m.len()).unwrap_or(u64::MAX))?;
                         spread_into(&mut map, &m);
+                        // 値が `undefined` のフィールドは、前の値も位置も上書きしない（DECISIONS S1）。
+                        for (k, v) in m.iter() {
+                            if *v != Value::Undefined {
+                                spans.insert(k.clone(), range(*s));
+                            }
+                        }
                     }
                     _ => return Err(internal(*s, "オブジェクトでない値の展開")),
                 },
             }
         }
-        Ok((map, key))
+        Ok(((map, spans), key))
     }
 
     fn element(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<Arc<Node>> {
@@ -1014,7 +1025,7 @@ impl<'a> Evaluator<'a> {
     }
 
     fn element_inner(&mut self, el: &'a Element, scope: &Arc<Scope>) -> R<Arc<Node>> {
-        let (mut props, key) = self.props(el, scope)?;
+        let ((mut props, prop_spans), key) = self.props(el, scope)?;
         let mut children = Vec::new();
         self.children(&el.children, scope, &mut children)?;
         let name = &el.name.name;
@@ -1041,6 +1052,7 @@ impl<'a> Evaluator<'a> {
         let node = Arc::new(Node {
             name: name.clone(),
             props,
+            prop_spans,
             key,
             children,
             span: self.file_span(el.span),
@@ -1166,6 +1178,16 @@ pub(crate) fn fill(mut e: EvalError, span: Span, unit: usize) -> EvalError {
 }
 
 /// 明示のキー。`undefined` はキーがないのと同じ（DECISIONS B7）。
+/// 評価した props と、各キーの位置。
+type Props = (BTreeMap<String, Value>, BTreeMap<String, ByteRange>);
+
+fn range(s: Span) -> ByteRange {
+    ByteRange {
+        start: s.start,
+        end: s.end,
+    }
+}
+
 fn set_field(map: &mut BTreeMap<String, Value>, key: &str, v: Value) {
     if v == Value::Undefined {
         map.remove(key);
