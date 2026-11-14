@@ -19,7 +19,7 @@ use cdl_eval::{Evaluated, Unit};
 pub use cdl_diag as diag;
 pub use cdl_diag::Diagnostic;
 pub use cdl_eval::sema::schema::{ComponentDef, Schema, SchemaBuilder};
-pub use cdl_eval::sema::types::{Field, Ty};
+pub use cdl_eval::sema::types::{Field, Literal, Ty};
 pub use cdl_eval::{ChildNode, Element, Value};
 pub use convert::{Child, FromNode, FromValue, Millis, Node, Px, Rgba};
 

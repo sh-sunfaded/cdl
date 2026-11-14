@@ -632,3 +632,10 @@ React の宣言的 UI に近づけるため、これまで禁止していた 3 �
 - 理由: 標準に合わせて、React / TSX に慣れた人の期待どおりにする。差は、利用者に謎の型エラーを見せないための 1 点だけ。
 - Contrast への影響: テキスト子の前後の空白が残る場合がある（`<Label> hi </Label>`）。ホストが表示用に trim するか、CDL 側で空白を書かない。
 
+
+### L1 ホストがリテラル型（列挙）を宣言できる
+- 変更前: `cdl-host` が `Literal` を公開しておらず、ホストは `Ty::Literal` を作れなかった。列挙（`"alt" | "super"`）を `string` にして、自前の変換で検査するしかなかった。
+- 変更後: `cdl-host` が `Literal` を再公開する（`pub use … {Field, Literal, Ty}`）。ホストは `Ty::union(vec![Ty::Literal(Literal::String("alt".into())), …])` で、props・`Env`・フックの型にリテラルのユニオンを使える。補助関数（`Ty::string_union` など）は足さない。範囲の宣言や、ユニオンの順序・比較は足さない（ユニオンは順序のない集合）。
+- 動作: 範囲外の値は、props なら E4004（メッセージに型のユニオンが出る）、`Env` なら E4014。`string` 型の値はリテラルのユニオンに入らない。
+- 理由: Contrast が 5 つの prop を `string` + 自前検査で回避していて、`Env` の型（列挙）も書けないため。追加だけで、既存の `.cdl` と API を壊さない。
+- Contrast への影響: 列挙の prop を `Literal` のユニオンに置き換えられる。置き換えると、その検査の診断が Contrast 独自のコードから CDL の E4004 に変わる。

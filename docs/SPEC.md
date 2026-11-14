@@ -500,7 +500,7 @@ cdl-diag ← cdl-syntax ← cdl-sema ← cdl-eval ← cdl-host ← cdl-cli
 
 - 公開 API の互換性（semver）を約束するのは `cdl-host` だけで、他のクレートは内部実装として自由に変えられる。
 - コアのクレートは、ファイルシステム・環境変数・時刻に触れない。必要な入力は、すべて `cdl-host` の引数から渡される。
-- ホストは、評価結果の値木を、スキーマに対応する Rust の型へ変換して使う。変換に失敗したら、要素の位置つきの診断（E4008）として返る。プロトタイプの `cdl-host` は、変換を派生マクロではなく、手書きで実装する trait `FromNode`（ノード）・`FromValue`（props の値）と `Node` の API（`prop` / `children_of` / `unique_child` / `slot` など）で提供する（DECISIONS E7・E8・U4）。ルートが関数の形のときは、`Program::render(&env)` で要素ツリーを作る（DECISIONS U1）。
+- ホストは、評価結果の値木を、スキーマに対応する Rust の型へ変換して使う。変換に失敗したら、要素の位置つきの診断（E4008）として返る。プロトタイプの `cdl-host` は、変換を派生マクロではなく、手書きで実装する trait `FromNode`（ノード）・`FromValue`（props の値）と `Node` の API（`prop` / `children_of` / `unique_child` / `slot` など）で提供する（DECISIONS E7・E8・U4）。ルートが関数の形のときは、`Program::render(&env)` で要素ツリーを作る（DECISIONS U1）。ホストは `Ty::Literal`（`cdl-host` が `Literal` を再公開する）でリテラル型とそのユニオンを props・`Env`・フックの型に宣言できる（DECISIONS L1）。
 - CDL のプロトタイプ段階に限り、`oxc_parser` で構文を読み、CDL が許す範囲外の構文を診断で弾く構成を許す。本実装では `cdl-syntax` の自前パーサに置き換え、適合テストスイート（第 12 章）で同じ結果を保証する。
 - Contrast 側の仕様（フック一覧、スキーマ、リロード時の挙動）は Contrast のリポジトリで管理し、CDL の仕様書には書かない。
 
