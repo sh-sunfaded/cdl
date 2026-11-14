@@ -57,6 +57,8 @@ pub(crate) struct UnitState<'a> {
     functions: BTreeMap<String, &'a FunctionDecl>,
     /// import した名前 → そのファイルの番号。
     imports: BTreeMap<String, usize>,
+    /// ホストのモジュールから import した名前 → そのモジュール名（DECISIONS P3）。
+    host_imports: BTreeMap<String, String>,
     pub globals: BTreeMap<String, Value>,
 }
 
@@ -88,6 +90,7 @@ impl<'a> UnitState<'a> {
             arrow_ids: BTreeMap::new(),
             functions: BTreeMap::new(),
             imports: BTreeMap::new(),
+            host_imports: BTreeMap::new(),
             globals: BTreeMap::new(),
         };
         for item in &module.items {
@@ -103,6 +106,12 @@ impl<'a> UnitState<'a> {
                     if let Some(&t) = deps.get(&i.source.value) {
                         for n in &i.names {
                             u.imports.insert(n.name.clone(), t);
+                        }
+                    } else {
+                        // CDL ファイルでない import は、ホストのモジュール（型検査で存在を確かめ済み）。
+                        for n in &i.names {
+                            u.host_imports
+                                .insert(n.name.clone(), i.source.value.clone());
                         }
                     }
                 }
@@ -1047,7 +1056,7 @@ impl<'a> Evaluator<'a> {
             node.key = key;
             return Ok(Arc::new(node));
         }
-        self.check_unique(name, &children)?;
+        self.check_unique(el, &children)?;
         self.check_keys(&children);
         let node = Arc::new(Node {
             name: name.clone(),
@@ -1063,9 +1072,16 @@ impl<'a> Evaluator<'a> {
     }
 
     /// 一意な子の重複（評価後の検査。DECISIONS E2）。
-    fn check_unique(&self, name: &str, children: &[ChildNode]) -> R<()> {
-        let Some(component) = self.schema.component(name) else {
-            return Ok(());
+    /// 親の定義は、その要素の名前を import したモジュールから引く（DECISIONS P3）。
+    fn check_unique(&self, el: &Element, children: &[ChildNode]) -> R<()> {
+        let name = el.name.name.as_str();
+        let module = self.unit().and_then(|u| u.host_imports.get(name));
+        let Some(component) = module.and_then(|m| self.schema.component_in(m, name)) else {
+            // 組み込みコンポーネントは、型検査で import されたものだけが許される（D10）。
+            return Err(internal(
+                el.span,
+                "組み込みコンポーネントの取り込み元がない",
+            ));
         };
         let mut seen: BTreeMap<&str, ()> = BTreeMap::new();
         for c in children.iter().filter_map(ChildNode::as_element) {

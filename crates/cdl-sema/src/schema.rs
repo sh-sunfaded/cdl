@@ -46,8 +46,16 @@ impl Schema {
     }
 
     /// 名前で組み込みコンポーネントを探す（モジュールの順に最初に見つかったもの）。
+    /// 同名のコンポーネントが別モジュールにあると、取り違えうる。評価は使わず、
+    /// [`Schema::component_in`] を使う（DECISIONS P3）。公開 API のため残す。
     pub fn component(&self, name: &str) -> Option<&Component> {
         self.modules.values().find_map(|m| m.components.get(name))
+    }
+
+    /// `module` の組み込みコンポーネントを名前で探す。同名のコンポーネントが別モジュールにあっても、
+    /// 取り違えない（DECISIONS P3）。
+    pub fn component_in(&self, module: &str, name: &str) -> Option<&Component> {
+        self.modules.get(module)?.components.get(name)
     }
 }
 
