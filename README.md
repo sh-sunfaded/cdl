@@ -500,7 +500,7 @@ Kani の実行結果（2026-11-11）: 9 個成功。`lexer_never_panics` は時�
 
 ## v0.1 の現状
 
-v0.1 は、仕様（`docs/SPEC.md`）の全体を実装し、`bash scripts/check-all.sh`（rules・fmt・clippy・test・conformance・spec-examples）がすべて OK の状態です（テスト 187 件、適合テスト 150 ケース。Kani は上記のとおり未実行）。`0.x` のあいだ、仕様・診断コードの追加・`cdl-host` の公開 API は、破壊的に変わりうります。
+v0.1 は、仕様（`docs/SPEC.md`）の全体を実装し、`bash scripts/check-all.sh`（rules・fmt・clippy・test・conformance・spec-examples）がすべて OK の状態です（テスト 191 件、適合テスト 150 ケース。Kani は上記のとおり未実行）。`0.x` のあいだ、仕様・診断コードの追加・`cdl-host` の公開 API は、破壊的に変わりうります。
 
 ### v0.1 に至る主な仕様変更
 

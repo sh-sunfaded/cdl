@@ -1,7 +1,7 @@
 # CDL 引き継ぎ書（Contrast への組み込みを担当する人へ）
 
 2026-11-11 時点。確認したことだけを書く。推測は「推測」、確認できなかったことは「未確認」と書く。
-細部は `docs/SPEC.md`（言語仕様）・`docs/DECISIONS.md`（実装の決定 102 項目）・`docs/DIAGNOSTICS.md`（診断コード表）・rustdoc を参照する。
+細部は `docs/SPEC.md`（言語仕様）・`docs/DECISIONS.md`（実装の決定 103 項目）・`docs/DIAGNOSTICS.md`（診断コード表）・rustdoc を参照する。
 
 ## 1. 要約
 
@@ -181,7 +181,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 | 検査 | 結果 |
 | --- | --- |
-| `scripts/check-all.sh`（kani 以外） | OK（2026-11-11。AUDIT 修正後）。`cargo test --workspace` は 125 テスト・失敗 0 |
+| `scripts/check-all.sh`（kani 以外） | OK（2026-11-14。0.2.1 の T8 修正後。`cargo test --workspace` は 191 テスト・失敗 0）。2026-11-11 の AUDIT 修正後の記録は 125 テスト |
 | `cargo fmt --check` | OK |
 | `cargo clippy --workspace --all-targets -- -D warnings` | OK |
 | `scripts/check-rules.sh` | すべて OK |
