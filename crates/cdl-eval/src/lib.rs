@@ -198,9 +198,11 @@ pub fn render(
         ));
     }
     if !conforms(env, env_ty) {
+        let at = value::mismatch_path(env, env_ty)
+            .map_or(String::new(), |p| format!("（合わないフィールド: `{p}`）"));
         return Err(fail(
             Code::EnvMismatch,
-            format!("`Env` の値が `{env_ty}` に合わない"),
+            format!("`Env` の値が `{env_ty}` に合わない{at}"),
         ));
     }
     let mut ev = evaluator(units, schema, limits, limits.max_steps);

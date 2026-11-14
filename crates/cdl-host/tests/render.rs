@@ -204,3 +204,35 @@ fn a_function_root_needs_a_declared_env() {
     assert_eq!(errs.len(), 1, "{errs:#?}");
     assert_eq!(errs[0].code, Code::RootFunctionWithoutEnv);
 }
+
+#[test]
+fn an_env_mismatch_names_the_field_path() {
+    let program = load(FUNCTION_ROOT, true).unwrap();
+    let message = |bad: Value| program.render(&bad).unwrap_err()[0].message.clone();
+    let wrong_scale = Value::object([(
+        "output",
+        Value::object([("name", Value::string("a")), ("scale", Value::string("x"))]),
+    )]);
+    assert!(
+        message(wrong_scale).contains("output.scale"),
+        "入れ子のフィールドの型違い"
+    );
+    let missing = Value::object([("output", Value::object([("name", Value::string("a"))]))]);
+    assert!(
+        message(missing).contains("output.scale"),
+        "入れ子のフィールドがない"
+    );
+    let extra = Value::object([(
+        "output",
+        Value::object([
+            ("name", Value::string("a")),
+            ("scale", Value::Number(1.0)),
+            ("dpi", Value::Number(96.0)),
+        ]),
+    )]);
+    assert!(message(extra).contains("output.dpi"), "余分なフィールド");
+    assert!(
+        message(Value::Undefined).contains("Env"),
+        "経路がなくても Env の不一致と分かる"
+    );
+}

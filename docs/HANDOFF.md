@@ -1,7 +1,7 @@
 # CDL 引き継ぎ書（Contrast への組み込みを担当する人へ）
 
 2026-11-11 時点。確認したことだけを書く。推測は「推測」、確認できなかったことは「未確認」と書く。
-細部は `docs/SPEC.md`（言語仕様）・`docs/DECISIONS.md`（実装の決定 83 項目）・`docs/DIAGNOSTICS.md`（診断コード表）・rustdoc を参照する。
+細部は `docs/SPEC.md`（言語仕様）・`docs/DECISIONS.md`（実装の決定 102 項目）・`docs/DIAGNOSTICS.md`（診断コード表）・rustdoc を参照する。
 
 ## 1. 要約
 
@@ -121,7 +121,7 @@ fn resolve(&self, importer: Option<&str>, specifier: &str) -> Result<Source, Str
 
 ### 2.6 診断
 
-- コード帯（SPEC §10）: E0 字句 / E1 構文 / E2 名前解決・import / E3 型検査 / E4 スキーマ適合（ホストの組み込みと `Policy`）/ E5 評価。全 63 コードは `docs/DIAGNOSTICS.md`。コードの意味は変えない。
+- コード帯（SPEC §10）: E0 字句 / E1 構文 / E2 名前解決・import / E3 型検査 / E4 スキーマ適合（ホストの組み込みと `Policy`）/ E5 評価。全 76 コードは `docs/DIAGNOSTICS.md`。コードの意味は変えない。
 - `Diagnostic { code, severity, span: {file, start, end}, message, labels, help }`。`start`/`end` は元のソースのバイトオフセット。`Engine::load` の `Err` は (file, start, end, code) で整列済み。
 - JSON: `cdl_host::diag::to_json(&[Diagnostic])` / `from_json`。形は SPEC §10 と DECISIONS F2。
 - 人間向け: `cdl_host::diag::render_human(&diag, &dyn SourceMap)`。`SourceMap::source(file) -> Option<&str>` を実装する（`cdl-cli/src/lib.rs` の `Sources` が例）。ソースが見つからなければバイトオフセット表示にフォールバックする。

@@ -170,6 +170,57 @@ impl Value {
     }
 }
 
+/// 値が型に合わないとき、合わない最も内側のフィールドの経路（`output.scale`・`items[1].name`）を返す。
+/// 合うとき、またはユニオン・タプルの中など 1 か所に絞れないときは `None`。呼び出し側が値の深さを
+/// 制限してから呼ぶ（再帰の深さは値の深さで有界）。
+pub fn mismatch_path(v: &Value, ty: &Ty) -> Option<String> {
+    if conforms(v, ty) {
+        return None;
+    }
+    match (v, ty) {
+        (Value::Object(m), Ty::Object(fields)) => {
+            if let Some(k) = m.keys().find(|k| !fields.contains_key(*k)) {
+                return Some(k.clone());
+            }
+            for (k, f) in fields {
+                let x = m.get(k).unwrap_or(&Value::Undefined);
+                if !conforms(x, &f.effective()) {
+                    return Some(join_path(k, mismatch_path(x, &f.effective())));
+                }
+            }
+            None
+        }
+        (Value::Object(m), Ty::Record(t)) => {
+            let (k, x) = m.iter().find(|(_, x)| !conforms(x, t))?;
+            Some(join_path(k, mismatch_path(x, t)))
+        }
+        (Value::Array(xs), Ty::Array(t)) => {
+            let (i, x) = xs.iter().enumerate().find(|(_, x)| !conforms(x, t))?;
+            Some(format!(
+                "[{i}]{}",
+                mismatch_path(x, t).map_or(String::new(), |p| index_rest(&p))
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// 経路の続き。フィールド名なら `.` をつけ、添字なら続ける。
+fn index_rest(p: &str) -> String {
+    if p.starts_with('[') {
+        p.to_owned()
+    } else {
+        format!(".{p}")
+    }
+}
+
+fn join_path(head: &str, rest: Option<String>) -> String {
+    match rest {
+        Some(r) => format!("{head}{}", index_rest(&r)),
+        None => head.to_owned(),
+    }
+}
+
 /// 値が型に合うか（ホストから受け取った値の検査に使う。DECISIONS E5）。
 pub fn conforms(v: &Value, ty: &Ty) -> bool {
     match (v, ty) {
