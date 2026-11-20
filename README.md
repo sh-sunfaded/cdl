@@ -1,4 +1,4 @@
-# CDL (Contrast Document Language)
+# CDL(Contrast Document Language)
 
 CDL は、Wayland コンポジタ Contrast の設定とポリシーを宣言するための、TypeScript 風構文・JSX 風ドキュメントの静的型付き言語です。設定は要素のツリー（ドキュメント）として書き、評価は純粋・決定的で、必ず停止します。
 
@@ -538,4 +538,4 @@ DECISIONS の決定は SPEC に反映済みです。実装して分かったこ�
 
 ## ライセンス
 
-[`LICENSE`](LICENSE) を参照してください。
+MIT([LICENSE](LICENSE)を参照)。
